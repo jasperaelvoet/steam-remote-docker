@@ -1,0 +1,14 @@
+{
+  "name": "steam-remote-docker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build and validate the Steam Remote Play OCI image",
+  "packageManager": "bun@1.4.0",
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "check": "bun scripts/check.ts"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  }
+}

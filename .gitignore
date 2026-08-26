@@ -2,9 +2,6 @@
 /mnt/
 /data/
 
-# Build output
-/build/container/src/*/target/
-
 # Logs and caches
 *.log
 __pycache__/

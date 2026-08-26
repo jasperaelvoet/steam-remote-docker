@@ -1,12 +1,4 @@
-.git
-.github
-.DS_Store
-._*
-.idea
-.vscode
-*.log
-/mnt
-/data
-**/target
-__pycache__
-*.pyc
+**
+!Containerfile
+!container
+!container/steam-remote.sh

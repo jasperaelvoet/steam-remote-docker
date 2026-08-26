@@ -1,79 +1,46 @@
 # Agent Notes
 
-This project is an always-on Arch Linux Steam Remote Play OCI container. It
-streams directly to Steam Link and is deployed through a system-level Podman
-Quadlet; it does not use Sunshine, Moonlight, or Wolf.
+This repository builds one always-on Steam Remote Play OCI image. It is a
+plain container with no host deployment manager in scope.
 
-## Working Rules
+## Invariants
 
-- Do not commit unless the user explicitly asks for a commit.
-- Do not store credentials, Steam Guard codes, SSH targets, passwords, or other
-  private machine details in the repository.
-- Preserve the single persistent application-data mount: all mutable Steam
-  state lives under `/mnt/user_data`, with the persistent home at
-  `/mnt/user_data/home/retro` and its in-session path at `/home/retro`.
-- Never add a target that deletes persistent user data. Stop the service before
-  moving, backing up, or restoring a Steam library.
-- Keep the base image immutable. System packages belong in the Containerfile;
-  Steam updates, games, compatibility tools, saves, and settings belong in the
-  persistent home.
-- Prefer global session fixes over per-game wrappers. Do not add game-specific
-  workarounds to the default path.
-- Preserve host networking and the one-session model.
-- Keep the recovery VNC server disabled by default and bound to loopback only.
-- Keep Podman/Buildah and the system Quadlet as the repository's single build
-  and deployment surface.
+- Do not commit unless the user explicitly asks.
+- Never store credentials, Steam Guard codes, passwords, hostnames, or private
+  machine details in the repository.
+- `/mnt/data` is the only persistent application-data mount and is the
+  `steam` user's home. Never add a command that deletes this data.
+- Keep system packages in `Containerfile`. Steam updates, games, compatibility
+  tools, saves, and settings belong in the persistent home.
+- Preserve host networking, the read-only root, AMD RADV/VA-API support, and
+  the single-session model.
+- Keep one supported runtime path: headless Gamescope, PipeWire, and Steam's
+  gamepad UI. Do not add alternate sessions, recovery
+  servers, or per-game wrappers.
+- Defaults are `3840x2160@60`. The three documented display environment
+  variables are the entire configuration surface.
 
-## Runtime Shape
+## Repository shape
 
-- The supervisor initializes the persistent home and machine identity, then
-  starts D-Bus, PipeWire/PipeWire-Pulse, KWin on its virtual backend, nested
-  Gamescope, and Steam Big Picture.
-- Gamescope, Steam, and PipeWire share one user runtime directory so Steam can
-  capture the Gamescope PipeWire node.
-- `STEAM_REMOTE_SESSION_MODE=gamescope` is the normal path. `x11` is an explicit
-  compatibility fallback, not an automatic silent downgrade.
-- Steam stays alive between clients. The supervisor restarts Steam with bounded
-  backoff and exits on critical compositor or audio failure so systemd can
-  restart the appliance.
-- AMD RADV and VA-API are the primary graphics/encode path. Preserve the
-  corresponding 32-bit packages for Steam and Proton.
-- Runtime diagnostics are `steam-remote status [--json]` and `steam-remote
-  health [--json]`.
-- The optional `steam-remote admin start|stop|status` console is for login and
-  recovery through an SSH tunnel only.
+- `Containerfile` defines the immutable Arch Linux image.
+- `container/steam-remote.sh` prepares the persistent home and starts the session.
+- `scripts/*.ts` provide development checks and image builds through Bun.
+- `.github/workflows/container.yml` validates and publishes the image.
 
-## Development Commands
+Runtime diagnostics are `steam-remote status [--json]` and `steam-remote
+health [--json]`.
 
-- `make build` builds `localhost/steam-remote-docker:latest` with Podman.
-- `make install-quadlet` installs the system Quadlet and reloads systemd; invoke
-  it as root or through `sudo make`.
-- `make start`, `stop`, `restart`, `logs`, and `service-status` operate on the
-  generated systemd service.
-- `make status` and `make health` inspect the running container.
-- `make check` runs non-mutating source and Quadlet checks available on the
-  current host.
+## Development
 
-## Verification
+- `bun run check` runs syntax, lint, and repository-shape checks.
+- `bun run build` builds `localhost/steam-remote-docker:latest` with Podman.
 
-Before handing off meaningful changes, run at minimum:
+Before handing off image or runtime changes, run `bun run check`, ShellCheck every
+executable shell script, and build the `linux/amd64` image when Podman is
+available.
 
-- `make check`
-- `cargo check --locked --manifest-path
-  build/container/src/steam-remote-rs/Cargo.toml`
-- Shell syntax checks for every executable shell script under
-  `build/container/bin` and `scripts`.
-- A Quadlet generator dry run when `podman-system-generator` is available.
-- `podman build --platform linux/amd64 --file
-  build/container/Containerfile --tag localhost/steam-remote-docker:test .`
-  when image contents change.
-
-For runtime changes, validate on a Linux host:
-
-- `steam-remote health` succeeds and the OCI health state becomes healthy.
-- `vulkaninfo --summary` and `vainfo` see the intended GPU.
-- PipeWire-Pulse is reachable and Gamescope publishes a capture node.
-- Steam listens for Remote Play on TCP/UDP 27036.
-- A real Steam Link session has hardware-encoded video, audio, controller input,
-  three reconnect cycles, and recovery after a service restart.
-- Steam's library and login remain intact after replacing the image.
+Runtime validation requires Linux: confirm Vulkan and VA-API reach the AMD GPU,
+PipeWire-Pulse is reachable, Gamescope publishes a capture node, Steam listens
+on TCP/UDP 27036, and a Steam Link session has hardware-encoded video, audio,
+controller input, reconnects cleanly, and retains the library and login after
+replacing the image.

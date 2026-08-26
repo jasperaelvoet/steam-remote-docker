@@ -1,270 +1,75 @@
-# Steam Remote Play on Podman
+# Steam Remote Play container
 
-[![Podman](https://img.shields.io/badge/runtime-Podman-892CA0?logo=podman&logoColor=white)](https://podman.io/)
-[![Arch Linux](https://img.shields.io/badge/userspace-Arch_Linux-1793D1?logo=archlinux&logoColor=white)](https://archlinux.org/)
-[![Steam Link](https://img.shields.io/badge/streaming-Steam_Link-171A21?logo=steam&logoColor=white)](https://store.steampowered.com/remoteplay)
-[![Publish OCI Image](https://github.com/jasperaelvoet/steam-remote-docker/actions/workflows/container.yml/badge.svg)](https://github.com/jasperaelvoet/steam-remote-docker/actions/workflows/container.yml)
+An opinionated, headless Steam host for Steam Link. The image runs one
+`3840x2160@60` headless Gamescope session with PipeWire audio and AMD hardware
+acceleration.
 
-**An always-on, headless Steam Link host in one systemd-managed Podman
-container.**
+There are no alternate session modes, recovery services, or per-game
+workarounds. Steam owns discovery, pairing, streaming, audio, and input.
 
-It runs Steam Big Picture, Gamescope, KWin, and PipeWire together in an
-immutable Arch Linux userspace. Steam handles discovery, pairing, video,
-audio, and controller input directly through Remote Play—without Sunshine,
-Moonlight, or Wolf.
+## Run
 
-## Architecture
-
-```mermaid
-flowchart LR
-    Client["Steam Link client"]
-
-    subgraph Container["Podman container"]
-        Steam["Steam Big Picture"]
-        Steam --> Gamescope["Gamescope"]
-        Gamescope --> KWin["KWin virtual display"]
-        Gamescope -->|"video capture"| PipeWire["PipeWire"]
-        Steam -->|"game audio"| PipeWire
-    end
-
-    Client <-->|"Steam Remote Play"| Steam
-    GPU["Host AMD GPU"] --> Gamescope
-    GPU -->|"hardware encode"| Steam
-```
-
-A system-level Quadlet keeps the container running across reboots. The design
-targets one persistent Steam account and one active stream at a time.
-
-## Requirements
-
-- An x86-64 Linux host with systemd, Podman 5 or newer, and Quadlet support.
-- A supported GPU exposed through `/dev/dri`. The image is optimized for AMD
-  RADV and VA-API, including the matching 32-bit libraries required by Steam
-  and Proton.
-- `/dev/uinput`, `/dev/uhid`, and access to `/dev/input` for Steam Link input.
-- Host networking. Steam Remote Play discovery does not work reliably through
-  an ordinary container network.
-- A persistent directory with enough space for the Steam library.
-
-Steam Remote Play uses UDP 27031-27036 and TCP 27036. Permit those ports in the
-host firewall for the networks from which clients may connect. Remote Play
-Anywhere also requires normal outbound internet access.
-
-## Build and install
-
-The included Quadlet is deliberately privileged because GPU and virtual-input
-access varies across kernels and nested container hosts. Only run this image on
-a trusted machine.
-
-Review `deploy/steam-remote.container` first. Its `/mnt/dev` and `/mnt/udev`
-device mirrors match the target Proxmox LXC. On an ordinary Linux host, remove
-those two volume lines and keep the explicit `AddDevice=` entries for
-`/dev/dri`, `/dev/uinput`, and `/dev/uhid`.
-
-The default persistent host path is `/srv/steam-remote`:
+The host needs Linux, Podman, an AMD GPU, and `/dev/uinput` plus `/dev/uhid`.
+Steam Remote Play also needs host networking and UDP `27031-27036` plus TCP
+`27036` allowed through the host firewall.
 
 ```sh
-sudo install -d -m 0755 /srv/steam-remote
-sudo make build
-sudo make install-quadlet
-sudo make start
-sudo make logs
+mkdir -p "$PWD/steam-data"
+
+podman run -d \
+  --name steam-remote \
+  --privileged \
+  --network host \
+  --ipc host \
+  --read-only \
+  --tmpfs /run:rw,exec,nosuid,size=1g,mode=755 \
+  --tmpfs /tmp:rw,exec,nosuid,size=8g,mode=1777 \
+  --tmpfs /var/tmp:rw,exec,nosuid,size=2g,mode=1777 \
+  --tmpfs /var/lib/xkb:rw,exec,nosuid,size=64m,mode=1777 \
+  --volume "$PWD/steam-data:/mnt/data:rw" \
+  ghcr.io/jasperaelvoet/steam-remote-docker:latest
 ```
 
-The generated service is `steam-remote.service`. Quadlet generators apply the
-unit's `[Install]` section at boot; generated services are started directly and
-must not be enabled with `systemctl enable`.
+`steam-data` is mounted directly at `/mnt/data`, the `steam` user's home. It
+contains the Steam library, client updates, login, games, saves, and settings.
+Stop the container before backing it up or moving it.
 
-Open Steam Link on a client on the same LAN and select the host. Steam starts in
-Big Picture and remains running between connections. The first login may
-require Steam Guard; use the recovery console described below.
+The defaults are intended for a 4K Steam Link client. Override only what the
+client or network requires:
 
-## Persistent data
+| Variable | Default |
+| --- | ---: |
+| `STEAM_REMOTE_WIDTH` | `3840` |
+| `STEAM_REMOTE_HEIGHT` | `2160` |
+| `STEAM_REMOTE_FPS` | `60` |
 
-`/mnt/user_data` is the container's only persistent application-data mount. The
-Quadlet maps `/srv/steam-remote` there, and the runtime exposes the persistent
-home at the stable in-session path `/home/retro`:
+For example, add `--env STEAM_REMOTE_WIDTH=1920 --env
+STEAM_REMOTE_HEIGHT=1080` for 1080p.
 
-```text
-/srv/steam-remote/
-├── home/retro/       Steam account, library, games, saves, and settings
-├── machine-id        Stable container identity
-└── var/log/steam-remote/
-```
-
-Steam client updates, compatibility tools, games, saves, shader caches,
-pairing state, and login state all remain in this directory when the image is
-replaced. Back it up only while the service is stopped. This repository
-intentionally provides no command that deletes it.
-
-## Configuration
-
-Set environment values in `deploy/steam-remote.container`, then run
-`sudo make install-quadlet restart`:
-
-| Variable | Image default | Bundled Quadlet | Purpose |
-| --- | --- | --- | --- |
-| `STEAM_REMOTE_WIDTH` | `1920` | `3840` | Virtual display width in pixels |
-| `STEAM_REMOTE_HEIGHT` | `1080` | `2160` | Virtual display height in pixels |
-| `STEAM_REMOTE_FPS` | `60` | `60` | Virtual display refresh rate |
-| `STEAM_REMOTE_SCALE` | `auto` | `2` | KWin scale; `auto` selects 1, 1.5, or 2 from the resolution |
-| `STEAM_REMOTE_SESSION_MODE` | `gamescope` | `gamescope` | Normal capture path; use `x11` for compatibility testing |
-| `STEAM_REMOTE_STEAM_CHANNEL` | `inherit` | `stable` | Steam client channel: `inherit`, `stable`, or `publicbeta` |
-| `STEAM_REMOTE_STEAMRT3` | `inherit` | `0` | Enable (`1`) or disable (`0`) Valve's experimental 64-bit SteamRT3 client |
-| `STEAM_STARTUP_ARGS` | `-bigpicture` | `-bigpicture` | Arguments passed to Steam |
-| `STEAM_REMOTE_WAYLAND_SOCKET` | `steam-remote-wayland` | image default | Outer KWin Wayland socket name |
-| `STEAM_REMOTE_READY_TIMEOUT` | `30` | image default | Startup readiness timeout in seconds |
-| `STEAM_REMOTE_ADMIN_PORT` | `5900` | image default | Loopback-only recovery console port |
-| `STEAM_REMOTE_X11_DISPLAY` | `:0` | image default | KWin Xwayland display used by `x11` mode |
-| `STEAM_REMOTE_LOG_MAX_BYTES` | `16777216` | image default | Per-process log rotation threshold; minimum 1 MiB |
-| `LIBVA_DRIVER_NAME` | auto | auto | Optional VA-API driver override; normally leave unset |
-| `AMD_VULKAN_ICD` | `RADV` | `RADV` | AMD Vulkan implementation |
-| `STEAM_REMOTE_RENDER_NODE` | auto | auto | Optional `/dev/dri/renderD*` override for codec probing |
-
-For temporary audio diagnostics, `STEAM_REMOTE_PIPEWIRE_DEBUG` and
-`STEAM_REMOTE_WIREPLUMBER_LOG_LEVEL` pass their non-empty values to the
-respective session processes. Leave them unset in normal operation.
-
-### Automatic codec policy
-
-At every appliance start, the supervisor probes each available DRM render node
-with VA-API and enables Steam's advanced host and hardware-encoding settings
-when an encoder is available. Codec negotiation uses this preference order:
-
-1. AV1
-2. H.265/HEVC
-3. H.264
-
-Steam Link still makes the final selection because the receiving device must
-also advertise a compatible hardware decoder. Unsupported codecs are skipped
-without breaking the session. The supervisor reports both the GPU codecs and
-the codec selected by the most recent real stream, so a VA-API capability is
-not mistaken for a codec that Steam actually negotiated.
-
-SteamRT3 remains available for explicit testing by setting the channel to
-`publicbeta` and `STEAM_REMOTE_STEAMRT3=1`. Both choices are reversible: set
-`STEAM_REMOTE_STEAMRT3=0` to retain the beta while using the legacy 32-bit
-client, or set `STEAM_REMOTE_STEAM_CHANNEL=stable` as well to return to stable
-Steam. Reinstall the Quadlet and restart after either change. Games and Steam
-state remain in the persistent home during channel changes.
-
-Package installation at runtime is blocked. Add packages to
-`build/container/Containerfile` and rebuild so the operating system remains
-reproducible. Never put Steam credentials, SSH passwords, or Steam Guard codes
-in environment variables or images.
-
-## Operations and diagnostics
+## Operate
 
 ```sh
-sudo make service-status  # systemd and container state
-sudo make status          # component report; always exits successfully
-sudo make health          # same checks; fails while unhealthy
-sudo make restart
-sudo make stop
+podman logs -f steam-remote
+podman exec steam-remote steam-remote status
+podman exec steam-remote steam-remote health --json
+podman stop steam-remote
 ```
 
-Both diagnostics accept `--json` when invoked directly:
+`status` reports readiness without failing. `health` exits nonzero unless
+Gamescope, PipeWire, Steam, and the Remote Play listener are all ready.
+
+## Build
 
 ```sh
-sudo podman exec steam-remote steam-remote status --json
-sudo podman exec steam-remote steam-remote health --json
+bun run check
+bun run build
 ```
 
-The checks cover the KWin socket and process, PipeWire/PipeWire-Pulse,
-Gamescope and its capture node when selected, Steam, the render device, codec
-preference and detection, the last negotiated stream codec, and the Remote
-Play TCP listener. The Quadlet schedules `steam-remote health` as the container
-health check.
+The development commands require Bun 1.4 or newer. `bun run build` uses
+Podman by default; set `CONTAINER_ENGINE=docker` to use Docker.
 
-For lower-level verification:
-
-```sh
-sudo podman exec steam-remote vulkaninfo --summary
-sudo podman exec steam-remote vainfo
-sudo podman exec steam-remote pactl info
-sudo podman exec steam-remote pw-cli list-objects Node
-```
-
-Steam's streaming log is kept in the persistent Steam home. After a real test
-connection, confirm that Steam selected the Gamescope PipeWire source and the
-highest mutually supported hardware codec. If Gamescope capture cannot produce
-video on a specific driver version, set `STEAM_REMOTE_SESSION_MODE=x11`,
-reinstall the Quadlet, restart the service, and repeat the complete video,
-audio, and input test.
-
-## Recovery console
-
-The optional VNC console is off during normal operation and binds only to host
-loopback because the container uses host networking:
-
-```sh
-sudo podman exec steam-remote steam-remote admin start
-```
-
-From a workstation, forward that loopback socket through SSH:
-
-```sh
-ssh -N -L 5900:127.0.0.1:5900 root@your-server
-```
-
-Connect a VNC viewer to `127.0.0.1:5900`, complete Steam login or recovery, and
-stop the console afterward:
-
-```sh
-sudo podman exec steam-remote steam-remote admin stop
-```
-
-Use `--port` or `STEAM_REMOTE_ADMIN_PORT` to select a different loopback port.
-Do not expose the recovery console through a public address or firewall rule.
-
-## Updates
-
-Build locally from the checked-out source:
-
-```sh
-sudo podman build --platform linux/amd64 \
-  --build-arg VCS_REF="$(git rev-parse HEAD)" \
-  --tag localhost/steam-remote-docker:latest \
-  --file build/container/Containerfile .
-```
-
-For production, prefer an immutable GHCR tag or digest. Change `Image=` in the
-Quadlet, then reload and restart:
-
-```sh
-sudo make install-quadlet restart
-```
-
-Stop Steam and back up `/srv/steam-remote` before a migration. Keep the previous
-image until a real Steam Link test has verified video, audio, controller input,
-several reconnects, and recovery after a service restart.
-
-## Image publishing
-
-Pushes to `main` use Buildah and Podman to publish `linux/amd64` OCI images to
-GitHub Container Registry with both mutable and immutable tags:
-
-```text
-ghcr.io/jasperaelvoet/steam-remote-docker:latest
-ghcr.io/jasperaelvoet/steam-remote-docker:sha-<full-commit>
-```
-
-Use the SHA tag for deployments. After the first workflow run, ensure the GHCR
-package visibility is public if anonymous pulls are desired.
-
-## Limitations
-
-- This is a single-session appliance, not a Games-on-Whales replacement or a
-  multi-tenant game launcher.
-- Steam must already be logged in and running for Steam Link discovery.
-- Steam Remote Play behavior can change with Steam client, Gamescope, Mesa, or
-  Proton updates. Test before deleting a known-working image.
-- Valve's beta SteamRT3 client can regress independently of the container
-  image. It is opt-in; the stable/legacy rollback settings are documented
-  above.
-- The container needs broad GPU and input-device access. Treat it as trusted
-  infrastructure and keep the host and image current.
-- A physical monitor or dummy plug is not required; KWin owns a virtual output.
+The image is intentionally read-only. Add system packages to `Containerfile`;
+Steam and game updates belong in `steam-data`.
 
 ## License
 
