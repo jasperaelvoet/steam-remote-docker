@@ -123,6 +123,7 @@ run_session() {
       ENABLE_GAMESCOPE_WSI=1 \
     gamescope \
       -e \
+      --rt \
       --backend headless \
       --force-grab-cursor \
       -W "${WIDTH}" \

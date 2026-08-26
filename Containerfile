@@ -29,6 +29,7 @@ RUN printf '\nDisableSandbox\n\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n
       lib32-pipewire \
       lib32-vulkan-icd-loader \
       lib32-vulkan-radeon \
+      libcap \
       libpulse \
       mesa \
       noto-fonts \
@@ -49,6 +50,7 @@ RUN printf '\nDisableSandbox\n\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n
     && groupadd -f render \
     && groupadd --gid 1000 steam \
     && useradd --no-create-home --home-dir /mnt/data --uid 1000 --gid 1000 --shell /bin/bash --groups video,input,render steam \
+    && setcap cap_sys_nice=ep /usr/bin/gamescope \
     && sed -i 's/^#\(en_US\.UTF-8 UTF-8\)/\1/' /etc/locale.gen \
     && locale-gen \
     && printf 'LANG=en_US.UTF-8\n' > /etc/locale.conf \
