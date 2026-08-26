@@ -560,12 +560,11 @@ run_session() {
       XDG_SESSION_DESKTOP=gamescope \
       XDG_SESSION_TYPE=wayland \
       ENABLE_GAMESCOPE_WSI=1 \
-      XCURSOR_SIZE=32 \
     gamescope \
       -e \
       --rt \
       --backend headless \
-      --force-grab-cursor \
+      --xwayland-count 2 \
       -W "${WIDTH}" \
       -H "${HEIGHT}" \
       -w "${WIDTH}" \
