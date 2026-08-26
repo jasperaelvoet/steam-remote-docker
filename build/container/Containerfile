@@ -44,6 +44,7 @@ RUN printf '\nDisableSandbox\n\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n
       bash \
       breeze \
       breeze-icons \
+      catatonit \
       ca-certificates \
       coreutils \
       curl \
@@ -84,7 +85,6 @@ RUN printf '\nDisableSandbox\n\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n
       seatd \
       steam \
       tar \
-      tini \
       util-linux \
       vulkan-icd-loader \
       vulkan-radeon \
@@ -148,5 +148,5 @@ STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5m --retries=3 \
   CMD ["/usr/local/bin/steam-remote", "health"]
 
-ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/steam-remote"]
+ENTRYPOINT ["/usr/sbin/catatonit", "-g", "--", "/usr/local/bin/steam-remote"]
 CMD ["run"]

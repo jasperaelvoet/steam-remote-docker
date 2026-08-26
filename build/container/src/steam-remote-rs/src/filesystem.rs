@@ -277,8 +277,8 @@ mod tests {
 
     #[test]
     fn validates_machine_id_shape() {
-        assert!(valid_machine_id("a8cc5b61d5ee4650ae555193b31fc370\n"));
-        assert!(!valid_machine_id("a8cc5b61-d5ee-4650-ae55-5193b31fc370"));
+        assert!(valid_machine_id("0123456789abcdef0123456789abcdef\n"));
+        assert!(!valid_machine_id("01234567-89ab-cdef-0123-456789abcdef"));
         assert!(!valid_machine_id("not-a-machine-id"));
     }
 }
