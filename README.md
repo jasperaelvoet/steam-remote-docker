@@ -1,25 +1,39 @@
-# Steam Remote Docker
+# Steam Remote Play on Podman
 
-An always-on, headless Steam host for streaming games with Steam Link. The OCI
-container runs an immutable Arch Linux userspace with a virtual KWin display,
-Gamescope, PipeWire, and Steam Big Picture in one supervised session. Steam's
-built-in Remote Play stack handles discovery, pairing, video, audio, and input;
-Sunshine, Moonlight, and Wolf are not involved.
+[![Podman](https://img.shields.io/badge/runtime-Podman-892CA0?logo=podman&logoColor=white)](https://podman.io/)
+[![Arch Linux](https://img.shields.io/badge/userspace-Arch_Linux-1793D1?logo=archlinux&logoColor=white)](https://archlinux.org/)
+[![Steam Link](https://img.shields.io/badge/streaming-Steam_Link-171A21?logo=steam&logoColor=white)](https://store.steampowered.com/remoteplay)
+[![Publish OCI Image](https://github.com/jasperaelvoet/steam-remote-docker/actions/workflows/container.yml/badge.svg)](https://github.com/jasperaelvoet/steam-remote-docker/actions/workflows/container.yml)
 
-```text
-Steam Link client
-       |
-       | Steam Remote Play
-       v
-Steam Big Picture -> Gamescope -> KWin virtual output
-       |                 |
-       +------ PipeWire -+
-                       |
-                  host AMD GPU
+**An always-on, headless Steam Link host in one systemd-managed Podman
+container.**
+
+It runs Steam Big Picture, Gamescope, KWin, and PipeWire together in an
+immutable Arch Linux userspace. Steam handles discovery, pairing, video,
+audio, and controller input directly through Remote Play—without Sunshine,
+Moonlight, or Wolf.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Client["Steam Link client"]
+
+    subgraph Container["Podman container"]
+        Steam["Steam Big Picture"]
+        Steam --> Gamescope["Gamescope"]
+        Gamescope --> KWin["KWin virtual display"]
+        Gamescope -->|"video capture"| PipeWire["PipeWire"]
+        Steam -->|"game audio"| PipeWire
+    end
+
+    Client <-->|"Steam Remote Play"| Steam
+    GPU["Host AMD GPU"] --> Gamescope
+    GPU -->|"hardware encode"| Steam
 ```
 
-The project uses Podman and a system-level Quadlet. It is intended for a single
-persistent Steam account and one active streaming session at a time.
+A system-level Quadlet keeps the container running across reboots. The design
+targets one persistent Steam account and one active stream at a time.
 
 ## Requirements
 

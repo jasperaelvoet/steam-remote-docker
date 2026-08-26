@@ -9,6 +9,7 @@ Pull=never
 ContainerName=steam-remote
 HostName=steam-remote
 Network=host
+StopTimeout=30
 PodmanArgs=--ipc=host --privileged --read-only --device-cgroup-rule "c 13:* rmw" --device-cgroup-rule "c 226:* rmw"
 AddDevice=/dev/dri
 AddDevice=/dev/uinput
@@ -33,7 +34,7 @@ Exec=run
 [Service]
 Restart=always
 RestartSec=5
-TimeoutStopSec=30
+TimeoutStopSec=45
 
 [Install]
 WantedBy=multi-user.target

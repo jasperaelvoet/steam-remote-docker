@@ -46,8 +46,8 @@ impl HealthReport {
         let pipewire_pulse =
             process_running("pipewire-pulse") && runtime_dir.join("pulse/native").exists();
         let mode = metadata.as_ref().map(|value| value.mode);
-        let gamescope =
-            (mode == Some(SessionMode::Gamescope)).then(|| process_running("gamescope"));
+        let gamescope = (mode == Some(SessionMode::Gamescope))
+            .then(|| process_running("gamescope") || process_running("gamescope-wl"));
         let gamescope_capture =
             (mode == Some(SessionMode::Gamescope)).then(|| capture_node_present(runtime_dir));
         let steam_required = metadata
