@@ -22,12 +22,9 @@ FROM --platform=linux/amd64 archlinux:base
 
 USER root
 
-ARG VCS_REF=unknown
-
 LABEL org.opencontainers.image.source="https://github.com/jasperaelvoet/steam-remote-docker" \
       org.opencontainers.image.description="Always-on Steam Remote Play host in an immutable Arch Linux container" \
-      org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.revision="${VCS_REF}"
+      org.opencontainers.image.licenses="MIT"
 
 # Steam is in multilib. Disable pacman's download sandbox because it cannot
 # create its restricted namespace under common container build seccomp profiles.
@@ -103,7 +100,7 @@ RUN printf '\nDisableSandbox\n\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n
     && groupadd -f render \
     && groupadd --gid 1000 retro \
     && useradd --create-home --uid 1000 --gid 1000 --shell /bin/bash --groups video,input,render retro \
-    && pacman -Scc --noconfirm
+    && rm -rf /var/cache/pacman/pkg/* /var/lib/pacman/sync/*
 
 RUN sed -i 's/^#\(en_US\.UTF-8 UTF-8\)/\1/' /etc/locale.gen \
     && locale-gen \
@@ -134,6 +131,9 @@ RUN install -d -m 1777 /var/lib/xkb \
       sed -i 's@Exec=/usr/bin/steam@Exec=/usr/local/bin/steam-remote-steam@g' /usr/share/applications/steam.desktop; \
     fi
 
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.revision="${VCS_REF}"
+
 ENV LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8 \
     LIBVA_DRIVER_NAME=radeonsi \
@@ -144,9 +144,6 @@ VOLUME ["/mnt/user_data"]
 WORKDIR /
 
 STOPSIGNAL SIGTERM
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5m --retries=3 \
-  CMD ["/usr/local/bin/steam-remote", "health"]
 
 ENTRYPOINT ["/usr/sbin/catatonit", "-g", "--", "/usr/local/bin/steam-remote"]
 CMD ["run"]

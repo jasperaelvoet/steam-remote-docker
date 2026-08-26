@@ -146,8 +146,8 @@ sudo podman exec steam-remote steam-remote health --json
 
 The checks cover the KWin socket and process, PipeWire/PipeWire-Pulse,
 Gamescope and its capture node when selected, Steam, the render device, and the
-Remote Play TCP listener. The image also uses `steam-remote health` as its OCI
-health check.
+Remote Play TCP listener. The Quadlet schedules `steam-remote health` as the
+container health check.
 
 For lower-level verification:
 

@@ -10,6 +10,11 @@ ContainerName=steam-remote
 HostName=steam-remote
 Network=host
 StopTimeout=30
+HealthCmd=/usr/local/bin/steam-remote health
+HealthInterval=30s
+HealthTimeout=10s
+HealthStartPeriod=5m
+HealthRetries=3
 PodmanArgs=--ipc=host --privileged --read-only --device-cgroup-rule "c 13:* rmw" --device-cgroup-rule "c 226:* rmw"
 AddDevice=/dev/dri
 AddDevice=/dev/uinput
