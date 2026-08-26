@@ -45,7 +45,6 @@ impl RuntimeSession {
         process::kill_leftovers();
         tokio::time::sleep(Duration::from_millis(500)).await;
         crate::filesystem::prepare(&args.runtime_dir, &args.wayland_socket)?;
-        process::start_child_reaper();
         crate::filesystem::start_input_watcher();
 
         let buses = Buses::start(&args.runtime_dir).context("starting D-Bus")?;

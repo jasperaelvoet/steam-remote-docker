@@ -3,37 +3,10 @@ use std::collections::BTreeMap;
 use std::fs::OpenOptions;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::Once;
 use std::time::Duration;
 use tokio::process::Child;
 
 use crate::paths::{log_dir, DESKTOP_GID, DESKTOP_UID};
-
-static REAPER_STARTED: Once = Once::new();
-
-pub fn start_child_reaper() {
-    REAPER_STARTED.call_once(|| {
-        let _ = std::thread::Builder::new()
-            .name("steam-remote-reaper".into())
-            .spawn(|| loop {
-                reap_orphans();
-                std::thread::sleep(Duration::from_secs(5));
-            });
-    });
-}
-
-fn reap_orphans() {
-    loop {
-        match nix::sys::wait::waitpid(
-            nix::unistd::Pid::from_raw(-1),
-            Some(nix::sys::wait::WaitPidFlag::WNOHANG),
-        ) {
-            Ok(nix::sys::wait::WaitStatus::StillAlive) => break,
-            Ok(_) => continue,
-            Err(nix::errno::Errno::ECHILD) | Err(_) => break,
-        }
-    }
-}
 
 pub fn command_available(name: &str) -> bool {
     std::env::var_os("PATH")
