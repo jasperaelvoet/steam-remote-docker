@@ -1,0 +1,17 @@
+# Runtime data
+/mnt/
+/data/
+
+# Build output
+/build/container/src/*/target/
+
+# Logs and caches
+*.log
+__pycache__/
+*.py[cod]
+
+# Editors and macOS metadata
+.DS_Store
+._*
+.vscode/
+.idea/

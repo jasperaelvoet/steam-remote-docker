@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${repo_root}"
+
+while IFS= read -r -d '' script; do
+  bash -n "${script}"
+done < <(find build/container/bin scripts -type f -perm -u+x -print0 2>/dev/null)
+
+supervisor_manifest="build/container/src/steam-remote-rs/Cargo.toml"
+if [ ! -f "${supervisor_manifest}" ]; then
+  printf 'error: supervisor Cargo.toml is missing: %s\n' "${supervisor_manifest}" >&2
+  exit 1
+fi
+cargo check --locked --manifest-path "${supervisor_manifest}"
+
+containerfile="build/container/Containerfile"
+quadlet="deploy/steam-remote.container"
+test -s "${containerfile}"
+test -s "${quadlet}"
+
+quadlet_generator="$(command -v podman-system-generator 2>/dev/null || true)"
+if [ -z "${quadlet_generator}" ] && [ -x /usr/lib/systemd/system-generators/podman-system-generator ]; then
+  quadlet_generator="/usr/lib/systemd/system-generators/podman-system-generator"
+fi
+
+if [ -n "${quadlet_generator}" ]; then
+  QUADLET_UNIT_DIRS="${repo_root}/deploy" "${quadlet_generator}" --dryrun >/dev/null
+else
+  printf 'note: podman-system-generator unavailable; skipped Quadlet generation\n' >&2
+fi

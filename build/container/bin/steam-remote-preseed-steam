@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SEED_OUT=/usr/share/steam-remote/steam
+BOOTSTRAP_SRC=/usr/lib/steam/bootstraplinux_ubuntu12_32.tar.xz
+BOOTSTRAP_OUT="${SEED_OUT}/bootstraplinux_ubuntu12_32.tar.xz"
+
+install -d -m 755 "${SEED_OUT}"
+install -m 644 "${BOOTSTRAP_SRC}" "${BOOTSTRAP_OUT}"
