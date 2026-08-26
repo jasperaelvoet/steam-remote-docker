@@ -15,9 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE_NAME: steam-remote-docker
-  IMAGE_TAGS: latest sha-${{ github.sha }}
-  IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
+  IMAGE: ghcr.io/${{ github.repository_owner }}/steam-remote-docker
 
 jobs:
   validate:
@@ -26,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -45,29 +43,26 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Build OCI image with Buildah
-        id: build
-        uses: redhat-actions/buildah-build@7a95fa7ee0f02d552a32753e7414641a04307056 # v2.13
-        with:
-          image: ${{ env.IMAGE_NAME }}
-          tags: ${{ env.IMAGE_TAGS }}
-          containerfiles: |
-            ./Containerfile
-          context: .
-          platforms: linux/amd64
-          build-args: |
-            VCS_REF=${{ github.sha }}
-          oci: true
-          layers: true
+      - name: Build OCI image
+        run: |
+          podman build \
+            --platform linux/amd64 \
+            --format oci \
+            --layers \
+            --build-arg "VCS_REF=${GITHUB_SHA}" \
+            --tag "${IMAGE}:latest" \
+            --tag "${IMAGE}:sha-${GITHUB_SHA}" \
+            --file Containerfile \
+            .
 
-      - name: Push image with Podman
-        id: push
-        uses: redhat-actions/push-to-registry@5ed88d269cf581ea9ef6dd6806d01562096bee9c # v2.8
-        with:
-          image: ${{ steps.build.outputs.image }}
-          tags: ${{ steps.build.outputs.tags }}
-          registry: ${{ env.IMAGE_REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push OCI image
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "${REGISTRY_PASSWORD}" | podman login ghcr.io \
+            --username "${GITHUB_ACTOR}" \
+            --password-stdin
+          podman push "${IMAGE}:latest"
+          podman push "${IMAGE}:sha-${GITHUB_SHA}"
