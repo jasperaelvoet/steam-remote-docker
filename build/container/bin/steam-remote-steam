@@ -87,6 +87,50 @@ clear_offline_mode() {
   done
 }
 
+configure_client_channel() {
+  local channel="${STEAM_REMOTE_STEAM_CHANNEL:-inherit}"
+  local beta_file="${STEAM_DIR}/package/beta"
+  case "${channel,,}" in
+    inherit)
+      ;;
+    beta | publicbeta)
+      mkdir -p "$(dirname "${beta_file}")"
+      if [ ! -f "${beta_file}" ] || [ "$(<"${beta_file}")" != publicbeta ]; then
+        printf 'publicbeta\n' >"${beta_file}"
+      fi
+      ;;
+    stable)
+      rm -f "${beta_file}"
+      ;;
+    *)
+      printf 'steam-remote: unsupported STEAM_REMOTE_STEAM_CHANNEL=%q (use inherit, stable, or publicbeta)\n' \
+        "${channel}" >&2
+      exit 2
+      ;;
+  esac
+}
+
+configure_client_runtime() {
+  local enabled="${STEAM_REMOTE_STEAMRT3:-inherit}"
+  case "${enabled,,}" in
+    1 | true | yes | enabled | steamrt3 | steamrt64)
+      # The public beta's steam.sh recognizes this documented internal selector,
+      # persists its normal UI marker, and launches the 64-bit SteamRT3 client.
+      export STEAM_FORCE_CLIENT=steamrt64
+      ;;
+    0 | false | no | disabled | legacy | ubuntu12_32)
+      export STEAM_FORCE_CLIENT=ubuntu12_32
+      ;;
+    inherit)
+      ;;
+    *)
+      printf 'steam-remote: unsupported STEAM_REMOTE_STEAMRT3=%q (use inherit, 1, or 0)\n' \
+        "${enabled}" >&2
+      exit 2
+      ;;
+  esac
+}
+
 export STEAM_RUNTIME=1
 export SRT_URLOPEN_PREFER_STEAM=1
 export GIO_USE_NETWORK_MONITOR=base
@@ -94,6 +138,8 @@ export RES_OPTIONS="timeout:1 attempts:2 rotate single-request-reopen"
 
 ensure_steam_bootstrap
 ensure_steam_links
+configure_client_channel
+configure_client_runtime
 clear_stale_ipc
 configure_shader_threads
 clear_offline_mode

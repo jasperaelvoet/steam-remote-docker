@@ -1,5 +1,6 @@
 mod admin;
 mod audio;
+mod codec;
 mod compositor;
 mod config;
 mod dbus;

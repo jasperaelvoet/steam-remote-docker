@@ -136,7 +136,6 @@ LABEL org.opencontainers.image.revision="${VCS_REF}"
 
 ENV LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8 \
-    LIBVA_DRIVER_NAME=radeonsi \
     AMD_VULKAN_ICD=RADV
 
 VOLUME ["/mnt/user_data"]

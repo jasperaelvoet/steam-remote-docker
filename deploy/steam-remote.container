@@ -31,8 +31,9 @@ Environment=STEAM_REMOTE_HEIGHT=2160
 Environment=STEAM_REMOTE_FPS=60
 Environment=STEAM_REMOTE_SCALE=2
 Environment=STEAM_REMOTE_SESSION_MODE=gamescope
+Environment=STEAM_REMOTE_STEAM_CHANNEL=stable
+Environment=STEAM_REMOTE_STEAMRT3=0
 Environment=STEAM_STARTUP_ARGS=-bigpicture
-Environment=LIBVA_DRIVER_NAME=radeonsi
 Environment=AMD_VULKAN_ICD=RADV
 Exec=run
 

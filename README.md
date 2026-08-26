@@ -109,18 +109,44 @@ Set environment values in `deploy/steam-remote.container`, then run
 | `STEAM_REMOTE_FPS` | `60` | `60` | Virtual display refresh rate |
 | `STEAM_REMOTE_SCALE` | `auto` | `2` | KWin scale; `auto` selects 1, 1.5, or 2 from the resolution |
 | `STEAM_REMOTE_SESSION_MODE` | `gamescope` | `gamescope` | Normal capture path; use `x11` for compatibility testing |
+| `STEAM_REMOTE_STEAM_CHANNEL` | `inherit` | `stable` | Steam client channel: `inherit`, `stable`, or `publicbeta` |
+| `STEAM_REMOTE_STEAMRT3` | `inherit` | `0` | Enable (`1`) or disable (`0`) Valve's experimental 64-bit SteamRT3 client |
 | `STEAM_STARTUP_ARGS` | `-bigpicture` | `-bigpicture` | Arguments passed to Steam |
 | `STEAM_REMOTE_WAYLAND_SOCKET` | `steam-remote-wayland` | image default | Outer KWin Wayland socket name |
 | `STEAM_REMOTE_READY_TIMEOUT` | `30` | image default | Startup readiness timeout in seconds |
 | `STEAM_REMOTE_ADMIN_PORT` | `5900` | image default | Loopback-only recovery console port |
 | `STEAM_REMOTE_X11_DISPLAY` | `:0` | image default | KWin Xwayland display used by `x11` mode |
 | `STEAM_REMOTE_LOG_MAX_BYTES` | `16777216` | image default | Per-process log rotation threshold; minimum 1 MiB |
-| `LIBVA_DRIVER_NAME` | `radeonsi` | `radeonsi` | VA-API driver used for AMD encoding |
+| `LIBVA_DRIVER_NAME` | auto | auto | Optional VA-API driver override; normally leave unset |
 | `AMD_VULKAN_ICD` | `RADV` | `RADV` | AMD Vulkan implementation |
+| `STEAM_REMOTE_RENDER_NODE` | auto | auto | Optional `/dev/dri/renderD*` override for codec probing |
 
 For temporary audio diagnostics, `STEAM_REMOTE_PIPEWIRE_DEBUG` and
 `STEAM_REMOTE_WIREPLUMBER_LOG_LEVEL` pass their non-empty values to the
 respective session processes. Leave them unset in normal operation.
+
+### Automatic codec policy
+
+At every appliance start, the supervisor probes each available DRM render node
+with VA-API and enables Steam's advanced host and hardware-encoding settings
+when an encoder is available. Codec negotiation uses this preference order:
+
+1. AV1
+2. H.265/HEVC
+3. H.264
+
+Steam Link still makes the final selection because the receiving device must
+also advertise a compatible hardware decoder. Unsupported codecs are skipped
+without breaking the session. The supervisor reports both the GPU codecs and
+the codec selected by the most recent real stream, so a VA-API capability is
+not mistaken for a codec that Steam actually negotiated.
+
+SteamRT3 remains available for explicit testing by setting the channel to
+`publicbeta` and `STEAM_REMOTE_STEAMRT3=1`. Both choices are reversible: set
+`STEAM_REMOTE_STEAMRT3=0` to retain the beta while using the legacy 32-bit
+client, or set `STEAM_REMOTE_STEAM_CHANNEL=stable` as well to return to stable
+Steam. Reinstall the Quadlet and restart after either change. Games and Steam
+state remain in the persistent home during channel changes.
 
 Package installation at runtime is blocked. Add packages to
 `build/container/Containerfile` and rebuild so the operating system remains
@@ -145,9 +171,10 @@ sudo podman exec steam-remote steam-remote health --json
 ```
 
 The checks cover the KWin socket and process, PipeWire/PipeWire-Pulse,
-Gamescope and its capture node when selected, Steam, the render device, and the
-Remote Play TCP listener. The Quadlet schedules `steam-remote health` as the
-container health check.
+Gamescope and its capture node when selected, Steam, the render device, codec
+preference and detection, the last negotiated stream codec, and the Remote
+Play TCP listener. The Quadlet schedules `steam-remote health` as the container
+health check.
 
 For lower-level verification:
 
@@ -159,10 +186,11 @@ sudo podman exec steam-remote pw-cli list-objects Node
 ```
 
 Steam's streaming log is kept in the persistent Steam home. After a real test
-connection, confirm that Steam selected the Gamescope PipeWire source and an
-AMD hardware encoder. If Gamescope capture cannot produce video on a specific
-driver version, set `STEAM_REMOTE_SESSION_MODE=x11`, reinstall the Quadlet,
-restart the service, and repeat the complete video, audio, and input test.
+connection, confirm that Steam selected the Gamescope PipeWire source and the
+highest mutually supported hardware codec. If Gamescope capture cannot produce
+video on a specific driver version, set `STEAM_REMOTE_SESSION_MODE=x11`,
+reinstall the Quadlet, restart the service, and repeat the complete video,
+audio, and input test.
 
 ## Recovery console
 
@@ -231,6 +259,9 @@ package visibility is public if anonymous pulls are desired.
 - Steam must already be logged in and running for Steam Link discovery.
 - Steam Remote Play behavior can change with Steam client, Gamescope, Mesa, or
   Proton updates. Test before deleting a known-working image.
+- Valve's beta SteamRT3 client can regress independently of the container
+  image. It is opt-in; the stable/legacy rollback settings are documented
+  above.
 - The container needs broad GPU and input-device access. Treat it as trusted
   infrastructure and keep the host and image current.
 - A physical monitor or dummy plug is not required; KWin owns a virtual output.

@@ -41,6 +41,8 @@ pub fn base(runtime_dir: &Path, dbus_address: Option<&str>) -> BTreeMap<String, 
         "LIBVA_DRIVER_NAME",
         "MESA_VK_DEVICE_SELECT",
         "RADV_PERFTEST",
+        "STEAM_REMOTE_STEAMRT3",
+        "STEAM_REMOTE_STEAM_CHANNEL",
         "VK_DRIVER_FILES",
     ] {
         if let Ok(value) = std::env::var(key) {

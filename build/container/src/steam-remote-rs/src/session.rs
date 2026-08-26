@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use tokio::process::Child;
 
 use crate::audio::AudioStack;
+use crate::codec::{self, CodecPolicy};
 use crate::compositor::{Gamescope, Kwin};
 use crate::config::{RunArgs, SessionMode};
 use crate::dbus::Buses;
@@ -27,6 +28,8 @@ pub struct SessionMetadata {
     pub gamescope_wayland_display: Option<String>,
     pub audio_enabled: bool,
     pub steam_enabled: bool,
+    #[serde(default)]
+    pub codec_policy: CodecPolicy,
 }
 
 pub struct RuntimeSession {
@@ -38,6 +41,7 @@ pub struct RuntimeSession {
     steam_env: BTreeMap<String, String>,
     steam: Option<Child>,
     steam_started_at: Option<Instant>,
+    codec_policy: CodecPolicy,
 }
 
 impl RuntimeSession {
@@ -46,6 +50,18 @@ impl RuntimeSession {
         tokio::time::sleep(Duration::from_millis(500)).await;
         crate::filesystem::prepare(&args.runtime_dir, &args.wayland_socket)?;
         crate::filesystem::start_input_watcher();
+
+        let codec_policy = CodecPolicy::detect(&args.runtime_dir);
+        codec_policy.log();
+        match codec::configure_steam_host(&codec_policy) {
+            Ok(count) if count > 0 => {
+                eprintln!("steam-remote: enabled automatic hardware encoding in {count} Steam profile(s)")
+            }
+            Ok(_) => eprintln!(
+                "steam-remote: no signed-in Steam profile found yet; codec settings will be applied after login and restart"
+            ),
+            Err(error) => eprintln!("steam-remote: warning: could not configure Steam codec settings: {error:#}"),
+        }
 
         let buses = Buses::start(&args.runtime_dir).context("starting D-Bus")?;
         let base_env = environment::base(&args.runtime_dir, Some(&buses.session_address));
@@ -115,6 +131,7 @@ impl RuntimeSession {
             gamescope_wayland_display: steam_env.get("GAMESCOPE_WAYLAND_DISPLAY").cloned(),
             audio_enabled: !args.no_audio,
             steam_enabled: !args.no_steam,
+            codec_policy: codec_policy.clone(),
         };
         let mut session = Self {
             args,
@@ -125,6 +142,7 @@ impl RuntimeSession {
             steam_env,
             steam: None,
             steam_started_at: None,
+            codec_policy,
         };
         if let Err(error) = write_metadata(&session.args, &metadata) {
             session.shutdown().await;
@@ -144,6 +162,9 @@ impl RuntimeSession {
     }
 
     fn spawn_steam(&mut self) -> Result<()> {
+        if let Err(error) = codec::configure_steam_host(&self.codec_policy) {
+            eprintln!("steam-remote: warning: could not refresh Steam codec settings: {error:#}");
+        }
         let args = self.args.steam_args();
         let mut command = vec!["/usr/local/bin/steam-remote-steam".to_string()];
         command.extend(args);

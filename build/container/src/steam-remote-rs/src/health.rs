@@ -1,8 +1,11 @@
 use anyhow::{Context, Result};
 use serde::Serialize;
+use std::fs;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::codec::{display_codecs, VideoCodec};
 use crate::config::SessionMode;
 use crate::environment;
 use crate::paths::{session_file, DEFAULT_WAYLAND_SOCKET, REMOTE_PLAY_PORT};
@@ -21,9 +24,14 @@ pub struct HealthReport {
     pub gamescope: Option<bool>,
     pub gamescope_capture: Option<bool>,
     pub steam: Option<bool>,
+    pub steam_channel: Option<String>,
+    pub steam_client_runtime: Option<String>,
     pub remote_play_tcp: Option<bool>,
     pub gpu_render_node: bool,
     pub vaapi_encode: bool,
+    pub codec_preference: Vec<VideoCodec>,
+    pub hardware_codecs: Vec<VideoCodec>,
+    pub last_stream_codec: Option<VideoCodec>,
 }
 
 impl HealthReport {
@@ -55,12 +63,23 @@ impl HealthReport {
             .map(|value| value.steam_enabled)
             .unwrap_or(true);
         let steam = steam_required.then(steam_running);
+        let steam_channel = steam_required.then(steam_channel);
+        let steam_client_runtime = steam_required.then(steam_client_runtime).flatten();
         let remote_play_tcp = steam_required.then(remote_play_ready);
         let render_node = render_node();
         let gpu_render_node = render_node.is_some();
         let vaapi_encode = render_node
             .as_deref()
             .is_some_and(|node| vaapi_encode_ready(runtime_dir, node));
+        let codec_preference = metadata
+            .as_ref()
+            .map(|value| value.codec_policy.preference.clone())
+            .unwrap_or_default();
+        let hardware_codecs = metadata
+            .as_ref()
+            .map(|value| value.codec_policy.hardware_codecs.clone())
+            .unwrap_or_default();
+        let last_stream_codec = last_stream_codec();
 
         let healthy = session
             && kwin
@@ -83,9 +102,14 @@ impl HealthReport {
             gamescope,
             gamescope_capture,
             steam,
+            steam_channel,
+            steam_client_runtime,
             remote_play_tcp,
             gpu_render_node,
             vaapi_encode,
+            codec_preference,
+            hardware_codecs,
+            last_stream_codec,
         }
     }
 
@@ -107,11 +131,33 @@ impl HealthReport {
         if let Some(value) = self.steam {
             println!("steam: {}", word(value));
         }
+        if let Some(channel) = self.steam_channel.as_deref() {
+            println!("steam channel: {channel}");
+        }
+        if let Some(runtime) = self.steam_client_runtime.as_deref() {
+            println!("steam client: {runtime}");
+        }
         if let Some(value) = self.remote_play_tcp {
             println!("remote play tcp/{REMOTE_PLAY_PORT}: {}", word(value));
         }
         println!("gpu render node: {}", word(self.gpu_render_node));
         println!("vaapi encode: {}", word(self.vaapi_encode));
+        println!(
+            "codec preference: {}",
+            display_codecs(&self.codec_preference, " > ")
+        );
+        let available = display_codecs(&self.hardware_codecs, ", ");
+        println!(
+            "hardware codecs: {}",
+            if available.is_empty() {
+                "none"
+            } else {
+                &available
+            }
+        );
+        if let Some(codec) = self.last_stream_codec {
+            println!("last negotiated codec: {codec}");
+        }
         Ok(())
     }
 }
@@ -149,6 +195,41 @@ fn remote_play_ready() -> bool {
     std::net::TcpStream::connect_timeout(&address, Duration::from_millis(350)).is_ok()
 }
 
+fn steam_channel() -> String {
+    fs::read_to_string("/home/retro/.steam/steam/package/beta")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "stable".into())
+}
+
+fn steam_client_runtime() -> Option<String> {
+    let mut legacy = false;
+    for process in fs::read_dir("/proc").ok()?.flatten() {
+        if !process
+            .file_name()
+            .to_string_lossy()
+            .bytes()
+            .all(|byte| byte.is_ascii_digit())
+        {
+            continue;
+        }
+        let Ok(command) = fs::read(process.path().join("cmdline")) else {
+            continue;
+        };
+        if command
+            .windows(b"/steamrt64/steam".len())
+            .any(|part| part == b"/steamrt64/steam")
+        {
+            return Some("SteamRT3 (64-bit)".into());
+        }
+        legacy |= command
+            .windows(b"/ubuntu12_32/steam".len())
+            .any(|part| part == b"/ubuntu12_32/steam");
+    }
+    legacy.then(|| "legacy (32-bit)".into())
+}
+
 fn render_node() -> Option<PathBuf> {
     std::fs::read_dir("/dev/dri")
         .ok()?
@@ -178,6 +259,43 @@ fn vaapi_encode_ready(runtime_dir: &Path, render_node: &Path) -> bool {
             output.status.success() && text.contains("vaentrypointencslice")
         })
         .unwrap_or(false)
+}
+
+fn last_stream_codec() -> Option<VideoCodec> {
+    for path in [
+        Path::new("/home/retro/.steam/steam/logs/streaming_log.txt"),
+        Path::new("/home/retro/.local/share/Steam/logs/streaming_log.txt"),
+    ] {
+        let Some(tail) = read_tail(path, 512 * 1024) else {
+            continue;
+        };
+        for line in tail.lines().rev() {
+            let lower = line.to_ascii_lowercase();
+            if !lower.contains("capture method set to") && !lower.contains("capturedescriptionid") {
+                continue;
+            }
+            if lower.contains("av1") {
+                return Some(VideoCodec::Av1);
+            }
+            if lower.contains("hevc") || lower.contains("h.265") || lower.contains("h265") {
+                return Some(VideoCodec::Hevc);
+            }
+            if lower.contains("h264") || lower.contains("h.264") {
+                return Some(VideoCodec::H264);
+            }
+        }
+    }
+    None
+}
+
+fn read_tail(path: &Path, maximum: u64) -> Option<String> {
+    let mut file = fs::File::open(path).ok()?;
+    let length = file.metadata().ok()?.len();
+    file.seek(SeekFrom::Start(length.saturating_sub(maximum)))
+        .ok()?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).ok()?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 fn word(value: bool) -> &'static str {
