@@ -180,7 +180,7 @@ snapshot_content_log() {
 }
 
 poll_update_activity() {
-  local path=${1:-${CONTENT_LOG}}
+  local path=$1
   local inode
   local size
   local contents
@@ -314,7 +314,7 @@ stream_activity() {
 }
 
 game_activity() {
-  local proc_root=${1:-/proc}
+  local proc_root=$1
   local environment
   local variable
   local readable=0
@@ -434,8 +434,8 @@ lifecycle_supervisor() {
   while :; do
     now=$(date +%s)
     streaming=$(stream_activity)
-    game=$(game_activity)
-    poll_update_activity
+    game=$(game_activity /proc)
+    poll_update_activity "${CONTENT_LOG}"
     activity=$(combine_activity "${streaming}" "${game}" "${UPDATE_STATUS}")
     evaluate_lifecycle "${activity}" "${quiet_since}" "${now}"
     quiet_since=${NEXT_QUIET_SINCE}
