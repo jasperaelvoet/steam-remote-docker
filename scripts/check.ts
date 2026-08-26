@@ -31,6 +31,8 @@ const requiredFiles = [
   'README.md',
   'container/steam-remote.sh',
   'package.json',
+  'bun.lock',
+  'tsconfig.json',
   '.agents/skills/steam-remote-image-maintenance/SKILL.md',
   '.agents/skills/steam-remote-runtime-validation/SKILL.md',
 ];

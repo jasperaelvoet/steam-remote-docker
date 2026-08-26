@@ -61,6 +61,7 @@ Gamescope, PipeWire, Steam, and the Remote Play listener are all ready.
 ## Build
 
 ```sh
+bun install --frozen-lockfile
 bun run check
 bun run build
 ```

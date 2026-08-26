@@ -4,6 +4,7 @@
 
 # Logs and caches
 *.log
+/node_modules/
 __pycache__/
 *.py[cod]
 

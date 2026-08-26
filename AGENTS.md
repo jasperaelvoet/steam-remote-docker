@@ -32,6 +32,7 @@ health [--json]`.
 
 ## Development
 
+- `bun install --frozen-lockfile` installs the pinned development dependencies.
 - `bun run check` runs syntax, lint, and repository-shape checks.
 - `bun run build` builds `localhost/steam-remote-docker:latest` with Podman.
 
