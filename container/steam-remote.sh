@@ -575,12 +575,18 @@ run_session() {
     >"${CONTROL_DIR}/xwayland"
   chmod 0755 "${CONTROL_DIR}/xwayland"
 
+  # Gamescope's -r flag paces compositing and PipeWire capture, not the game
+  # render loop: a game with vsync off presents without blocking and renders
+  # past the stream rate, spending GPU on frames the capture never delivers.
+  # DXVK and vkd3d-proton read these to cap Proton games at the stream rate.
   start_user gamescope \
     env \
       XDG_CURRENT_DESKTOP=gamescope \
       XDG_SESSION_DESKTOP=gamescope \
       XDG_SESSION_TYPE=wayland \
       ENABLE_GAMESCOPE_WSI=1 \
+      DXVK_FRAME_RATE="${FPS}" \
+      VKD3D_FRAME_RATE="${FPS}" \
       XCURSOR_SIZE="${CURSOR_CANVAS}" \
       STEAM_REMOTE_CURSOR_CANVAS="${CURSOR_CANVAS}" \
       STEAM_REMOTE_CURSOR_GLYPH="${CURSOR_GLYPH}" \

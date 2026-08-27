@@ -70,12 +70,14 @@ RUN printf '\nDisableSandbox\n\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n
       lib32-alsa-lib \
       lib32-alsa-plugins \
       lib32-libpulse \
+      lib32-libva-mesa-driver \
       lib32-mesa \
       lib32-pipewire \
       lib32-vulkan-icd-loader \
       lib32-vulkan-radeon \
       libcap \
       libpulse \
+      libva-mesa-driver \
       mesa \
       noto-fonts \
       noto-fonts-emoji \
