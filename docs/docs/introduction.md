@@ -21,8 +21,13 @@ It is deliberately simple and opinionated:
   read-only. Everything that changes — your login, library, games, saves,
   settings — lives in a single folder you mount at `/mnt/data`.
 - **Power-friendly.** After five minutes with no stream, game, or download,
-  the session drops to 1 FPS until something happens again. Nothing is ever
-  stopped or killed. See [Idle lifecycle](./idle-lifecycle.md).
+  the session hibernates: idle processes are frozen so CPU and GPU drop to
+  zero, while the host stays discoverable and wakes instantly on connection.
+  See [Idle lifecycle](./idle-lifecycle.md).
+- **Self-maintaining.** Steam client updates — and, with a host updater, the
+  container image itself — are applied automatically while the session sits
+  idle, never during a stream, game, or download. See
+  [Automatic updates](./auto-updates.md).
 
 ## What you need
 
@@ -47,10 +52,6 @@ podman run -d \
   --network host \
   --ipc host \
   --read-only \
-  --tmpfs /run:rw,exec,nosuid,size=1g,mode=755 \
-  --tmpfs /tmp:rw,exec,nosuid,size=8g,mode=1777 \
-  --tmpfs /var/tmp:rw,exec,nosuid,size=2g,mode=1777 \
-  --tmpfs /var/lib/xkb:rw,exec,nosuid,size=64m,mode=1777 \
   --volume "$PWD/steam-data:/mnt/data:rw" \
   ghcr.io/jasperaelvoet/steam-remote-docker:latest
 ```

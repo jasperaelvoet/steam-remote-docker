@@ -42,9 +42,23 @@ The controller re-evaluates once per second:
                      any activity
 ```
 
-Parking only adjusts Gamescope's frame limiter. Steam keeps running,
-downloads keep downloading, and any new activity — like a Steam Link
-connection — restores full rate automatically, typically within a second.
+Parking never kills anything. Steam keeps running, downloads keep
+downloading, and any new activity — like a Steam Link connection — restores
+full rate automatically, typically within a second.
+
+## Hibernation
+
+Parking goes further than a 1 FPS limiter: once the parked limiter is
+confirmed, the session **hibernates**. Everything not needed to accept a new
+Remote Play session — Gamescope, the X servers, and Steam's UI helper — is
+frozen in place with `SIGSTOP`. Frozen processes use zero CPU and GPU but
+keep all their state in RAM, so there is nothing to reload on wake.
+
+The main Steam process stays running, so the host remains discoverable and
+keeps accepting connections. When a client connects (or any other activity
+appears), the controller thaws everything with `SIGCONT` *before* restoring
+the full frame rate — wake is effectively instant. Detection uncertainty
+also thaws the session: when in doubt, everything runs.
 
 ## Failing safe
 
@@ -56,6 +70,13 @@ turns unhealthy so you notice.
 
 `error` is the only unhealthy lifecycle state — `parked` is normal and
 healthy.
+
+## Updates happen here too
+
+The parked state doubles as the safe window for updates: Steam client
+updates are applied by an in-place session restart, and container image
+updates are approved through the `update-gate` command — both only while
+parked, both covered in [Automatic updates](./auto-updates.md).
 
 ## Observing it
 

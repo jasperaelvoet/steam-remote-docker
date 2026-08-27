@@ -16,6 +16,7 @@ const sidebars: SidebarsConfig = {
     },
     "configuration",
     "idle-lifecycle",
+    "auto-updates",
     "operations",
     "data-and-backups",
     "networking",
@@ -28,11 +29,7 @@ const sidebars: SidebarsConfig = {
     {
       type: "category",
       label: "Internals",
-      items: [
-        "internals/architecture",
-        "internals/streaming",
-        "internals/development",
-      ],
+      items: ["internals/architecture", "internals/streaming"],
     },
   ],
 };

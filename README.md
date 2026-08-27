@@ -6,6 +6,8 @@ and AMD hardware acceleration.
 
 There are no alternate session modes, recovery services, or per-game
 workarounds. Steam owns discovery, pairing, streaming, audio, and input.
+When idle the session hibernates, and updates apply themselves while nobody
+is playing.
 
 Full documentation lives at
 [jasperaelvoet.github.io/steam-remote-docker](https://jasperaelvoet.github.io/steam-remote-docker/).
@@ -25,13 +27,13 @@ podman run -d \
   --network host \
   --ipc host \
   --read-only \
-  --tmpfs /run:rw,exec,nosuid,size=1g,mode=755 \
-  --tmpfs /tmp:rw,exec,nosuid,size=8g,mode=1777 \
-  --tmpfs /var/tmp:rw,exec,nosuid,size=2g,mode=1777 \
-  --tmpfs /var/lib/xkb:rw,exec,nosuid,size=64m,mode=1777 \
   --volume "$PWD/steam-data:/mnt/data:rw" \
   ghcr.io/jasperaelvoet/steam-remote-docker:latest
 ```
+
+The root filesystem stays read-only; the entrypoint mounts its own tmpfs
+scratch space for `/run`, `/tmp`, `/var/tmp`, and the X keymap cache, so no
+`--tmpfs` flags are needed.
 
 `steam-data` is mounted directly at `/mnt/data`, the `steam` user's home. It
 contains the Steam library, client updates, login, games, saves, and settings.
@@ -46,6 +48,7 @@ or network requires:
 | `STEAM_REMOTE_WIDTH` | `3840` |
 | `STEAM_REMOTE_HEIGHT` | `2160` |
 | `STEAM_REMOTE_FPS` | `60` |
+| `STEAM_REMOTE_AUTO_UPDATE` | `1` |
 
 For example, add `--env STEAM_REMOTE_WIDTH=1920 --env
 STEAM_REMOTE_HEIGHT=1080` for 1080p.
@@ -61,13 +64,21 @@ cannot exceed `STEAM_REMOTE_FPS`.
 Gamescope stays at full rate while a Remote Play stream, a Steam game, or an
 active download, update, validation, or patch operation is running. A
 disconnected game continues running so the same session can reconnect. With no
-activity, the image waits five minutes and then parks Gamescope at 1 FPS.
-
-Parking never stops Gamescope, Steam, games, or downloads. A new connection or
-other activity restores the configured rate automatically. Paused or queued
+activity, the image waits five minutes, parks Gamescope at 1 FPS, and then
+hibernates: Gamescope, the X servers, and Steam's UI helper are suspended with
+SIGSTOP so CPU and GPU go fully idle. The main Steam process keeps running, so
+the host stays discoverable; a new connection or any other activity resumes
+everything and restores the configured rate within a second. Paused or queued
 updates do not keep the session active. If activity detection or Gamescope
-control is unavailable, the session stays at full rate and reports an unhealthy
+control is unavailable, the session runs at full rate and reports an unhealthy
 lifecycle instead of interrupting Steam.
+
+Steam applies pending client updates only on launch, so a session parked for
+an hour is restarted in place — at most once per day — to pick them up. A
+parked session by definition has no stream, game, or download to interrupt.
+`steam-remote update-gate` exits zero only while parked, letting host-side
+image updaters replace the container safely at the same moments. Set
+`STEAM_REMOTE_AUTO_UPDATE=0` to disable both.
 
 ## Operate
 

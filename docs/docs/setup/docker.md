@@ -28,10 +28,6 @@ docker run -d \
   --network host \
   --ipc host \
   --read-only \
-  --tmpfs /run:rw,exec,nosuid,size=1g,mode=755 \
-  --tmpfs /tmp:rw,exec,nosuid,size=8g,mode=1777 \
-  --tmpfs /var/tmp:rw,exec,nosuid,size=2g,mode=1777 \
-  --tmpfs /var/lib/xkb:rw,exec,nosuid,size=64m,mode=1777 \
   --volume "$PWD/steam-data:/mnt/data:rw" \
   ghcr.io/jasperaelvoet/steam-remote-docker:latest
 ```
@@ -50,22 +46,23 @@ Then continue with [First login & verify](./first-login.md).
 | `--network host` | Steam Link discovery and streaming need the host's real network identity; NAT breaks discovery |
 | `--ipc host` | Shared memory between Steam, Gamescope, and the GPU driver |
 | `--read-only` | The image is immutable by design — nothing can modify the system, and updates are clean image swaps |
-| `--tmpfs …` | Writable scratch space; see below |
 | `--volume …:/mnt/data` | The single persistent folder — the Steam user's home |
 
-### Why the tmpfs mounts?
+### Scratch space is automatic
 
-They exist *because of* `--read-only`: with an immutable root filesystem,
-every path the session writes to must be mounted writable. Each one has a
-job:
+With a read-only root, every path the session writes to must be a writable
+mount — but you don't have to provide any of them. Because the container
+already runs privileged, the entrypoint mounts its own tmpfs scratch space at
+startup, with sensible size ceilings:
 
 | Mount | What writes there |
 | --- | --- |
-| `/run` | Runtime sockets and state: DBus, PipeWire, the session runtime directory, and the lifecycle state file. `exec` because a small generated Xwayland wrapper lives (and runs) here |
-| `/tmp` | Steam's and games' scratch space, plus the X11 sockets. The big one — hence 8g |
-| `/var/tmp` | Slower-churn temp files some games and tools use |
-| `/var/lib/xkb` | The X server's compiled keyboard-map cache |
+| `/run` (1g) | Runtime sockets and state: DBus, PipeWire, the session runtime directory, and the lifecycle state file |
+| `/tmp` (8g) | Steam's and games' scratch space, plus the X11 sockets |
+| `/var/tmp` (2g) | Slower-churn temp files some games and tools use |
+| `/var/lib/xkb` (64m) | The X server's compiled keyboard-map cache |
 
-The `size=` values are **ceilings, not allocations** — tmpfs uses RAM only
-for what's actually stored. If you drop `--read-only`, you can drop all four
-`--tmpfs` flags too; you lose the immutability guarantee but nothing else.
+The sizes are **ceilings, not allocations** — tmpfs uses RAM only for what's
+actually stored, and everything in them resets on restart. Any `--tmpfs`
+flags you pass yourself for these paths are simply mounted over inside the
+container.

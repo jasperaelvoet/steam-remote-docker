@@ -70,9 +70,9 @@ podman rm steam-remote
 podman run -d ... # same flags as before
 ```
 
-With Compose: `docker compose pull && docker compose up -d`. With Quadlet:
-enable `podman-auto-update.timer` and it happens
-[automatically](./setup/podman-quadlet.md#automatic-image-updates).
+Or let it happen automatically — image pulls gated on the session being
+idle, and Steam client updates handled entirely by the container itself: see
+[Automatic updates](./auto-updates.md).
 
 Library, login, saves, and settings survive — they live in the volume, not
 the image. Steam client updates also land in the volume, so Steam doesn't

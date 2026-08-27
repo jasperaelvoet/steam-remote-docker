@@ -10,6 +10,10 @@ override only what your client or network needs.
 | `STEAM_REMOTE_HEIGHT` | `2160` | Maximum render height in pixels |
 | `STEAM_REMOTE_FPS` | `60` | Maximum refresh rate |
 
+A fourth switch, `STEAM_REMOTE_AUTO_UPDATE`, controls
+[idle-time Steam client updates](./auto-updates.md)
+(default on; set `0` to disable).
+
 For a 1080p client:
 
 ```bash

@@ -30,6 +30,23 @@ readonly IDLE_SECONDS=300
 readonly PARKED_FPS=1
 readonly LIFECYCLE_RETRY_SECONDS=5
 readonly LIFECYCLE_STALE_SECONDS=10
+# Steam applies pending client updates only on launch. With no activity for
+# AUTO_UPDATE_PARKED_SECONDS beyond parking, and at most once per
+# AUTO_UPDATE_INTERVAL_SECONDS, the session restarts in place so a
+# perpetually idle host still picks them up. STEAM_REMOTE_AUTO_UPDATE=0
+# disables the restart.
+readonly AUTO_UPDATE=${STEAM_REMOTE_AUTO_UPDATE:-1}
+readonly AUTO_UPDATE_MARKER=${CONTROL_DIR}/restart-request
+readonly AUTO_UPDATE_STAMP=${STATE_DIR}/last-auto-update
+readonly AUTO_UPDATE_PARKED_SECONDS=3600
+readonly AUTO_UPDATE_INTERVAL_SECONDS=86400
+readonly SESSION_RESTART_STATUS=75
+# While parked, everything not needed to accept a new Remote Play session is
+# suspended with SIGSTOP so the GPU and CPU go fully idle. The main steam
+# process stays running for discovery and connection accept; the kernel
+# completes a client's TCP handshake on its own, the supervisor notices the
+# established connection within a second and resumes everything first.
+readonly -a DEEP_PARK_NAMES=(gamescope gamescope-wl Xwayland steamwebhelper)
 
 declare -a children=()
 declare -a auxiliaries=()
@@ -408,6 +425,45 @@ set_gamescope_limiter() {
     gamescopectl debug_set_fps_limit "${target}" >/dev/null 2>&1
 }
 
+deep_park_stop() {
+  local name
+
+  for name in "${DEEP_PARK_NAMES[@]}"; do
+    pkill -STOP -u "${APP_UID}" -x "${name}" 2>/dev/null || true
+  done
+}
+
+deep_park_resume() {
+  local name
+
+  for name in "${DEEP_PARK_NAMES[@]}"; do
+    pkill -CONT -u "${APP_UID}" -x "${name}" 2>/dev/null || true
+  done
+}
+
+auto_update_due() {
+  local state=$1
+  local quiet_since=$2
+  local now=$3
+  local last_update=$4
+
+  [[ "${AUTO_UPDATE}" != 0 ]] || return 1
+  [[ "${state}" == parked ]] || return 1
+  ((quiet_since > 0)) || return 1
+  ((now - quiet_since >= IDLE_SECONDS + AUTO_UPDATE_PARKED_SECONDS)) || return 1
+  ((now - last_update >= AUTO_UPDATE_INTERVAL_SECONDS))
+}
+
+request_session_restart() {
+  local now=$1
+
+  printf '%s\n' "${now}" >"${AUTO_UPDATE_STAMP}"
+  : >"${AUTO_UPDATE_MARKER}"
+  printf 'steam-remote: session idle; restarting Steam to apply pending updates\n'
+  deep_park_resume
+  kill "${children[@]}" 2>/dev/null || true
+}
+
 activity_reasons() {
   local streaming=$1
   local game=$2
@@ -437,6 +493,11 @@ lifecycle_supervisor() {
   local activity
   local controller
   local reasons
+  local auto_update_last
+  local deep_parked=false
+
+  auto_update_last=$(cat "${AUTO_UPDATE_STAMP}" 2>/dev/null) || auto_update_last=0
+  [[ "${auto_update_last}" =~ ^[0-9]+$ ]] || auto_update_last=0
 
   UPDATE_LOG_INODE=${initial_inode}
   UPDATE_LOG_OFFSET=${initial_offset}
@@ -452,6 +513,14 @@ lifecycle_supervisor() {
     evaluate_lifecycle "${activity}" "${quiet_since}" "${now}"
     quiet_since=${NEXT_QUIET_SINCE}
     lifecycle_state=${NEXT_LIFECYCLE_STATE}
+
+    # Wake from hibernation before touching the limiter: gamescopectl needs a
+    # running Gamescope, and uncertainty must always resume the session.
+    if [[ "${deep_parked}" == true && "${NEXT_LIMITER}" == full ]]; then
+      deep_park_resume
+      deep_parked=false
+      printf 'steam-remote: session resumed from hibernation\n'
+    fi
 
     if [[ "${NEXT_LIMITER}" == "${limiter}" ]]; then
       limiter_healthy=true
@@ -499,11 +568,53 @@ lifecycle_supervisor() {
     fi
 
     write_lifecycle "${lifecycle_state}" "${streaming}" "${game}" "${UPDATE_STATUS}" "${controller}" "${now}"
+
+    if auto_update_due "${lifecycle_state}" "${quiet_since}" "${now}" "${auto_update_last}"; then
+      request_session_restart "${now}"
+      return 0
+    fi
+
+    # Hibernate only once the parked limiter is confirmed applied, so the
+    # session is in a known state when it freezes.
+    if [[ "${lifecycle_state}" == parked && "${limiter}" == parked \
+      && "${deep_parked}" == false ]]; then
+      deep_park_stop
+      deep_parked=true
+      printf 'steam-remote: session hibernated; suspended idle processes\n'
+    fi
+
     sleep 1
   done
 }
 
+mount_scratch() {
+  local target=$1
+  local options=$2
+
+  # Already mounted by an earlier in-place session restart.
+  if [[ "$(findmnt -no SOURCE "${target}" 2>/dev/null)" == scratch ]]; then
+    return 0
+  fi
+  if ! mount -t tmpfs -o "${options}" scratch "${target}"; then
+    printf 'steam-remote: unable to mount tmpfs on %s; the container must run privileged\n' \
+      "${target}" >&2
+    return 1
+  fi
+}
+
 prepare_runtime() {
+  # The image root is read-only, so the entrypoint mounts every writable
+  # runtime path itself; no --tmpfs flags are needed at run time. The sizes
+  # are ceilings, not allocations: memory is only used for what is stored.
+  mount_scratch /run rw,exec,nosuid,size=1g,mode=755
+  mount_scratch /tmp rw,exec,nosuid,size=8g,mode=1777
+  mount_scratch /var/tmp rw,exec,nosuid,size=2g,mode=1777
+  mount_scratch /var/lib/xkb rw,exec,nosuid,size=64m,mode=1777
+
+  # Remove leftovers from a previous session so daemons do not trip over
+  # stale pid files and sockets after an in-place restart.
+  rm -rf /run/dbus "${RUNTIME_DIR}" "${CONTROL_DIR}" /tmp/.X11-unix
+
   install -d -m 0755 -o "${APP_UID}" -g "${APP_GID}" "${HOME_DIR}"
   install -d -m 0755 -o "${APP_UID}" -g "${APP_GID}" "${STATE_DIR}"
   install -d -m 0755 "${CONTROL_DIR}"
@@ -513,7 +624,9 @@ prepare_runtime() {
     tr -d '-' </proc/sys/kernel/random/uuid >"${STATE_DIR}/machine-id"
     chmod 0444 "${STATE_DIR}/machine-id"
   fi
-  mount --bind "${STATE_DIR}/machine-id" /etc/machine-id
+  if ! findmnt -no TARGET /etc/machine-id >/dev/null 2>&1; then
+    mount --bind "${STATE_DIR}/machine-id" /etc/machine-id
+  fi
 
   install -d -m 0700 -o "${APP_UID}" -g "${APP_GID}" "${RUNTIME_DIR}"
   install -d -m 0755 /run/dbus
@@ -524,6 +637,7 @@ prepare_runtime() {
 
 cleanup() {
   trap - EXIT
+  deep_park_resume
   if ((${#auxiliaries[@]} > 0)); then
     kill "${auxiliaries[@]}" 2>/dev/null || true
     wait "${auxiliaries[@]}" 2>/dev/null || true
@@ -616,6 +730,10 @@ run_session() {
   set +e
   wait -n "${children[@]}"
   set -e
+  if [[ -e "${AUTO_UPDATE_MARKER}" ]]; then
+    rm -f "${AUTO_UPDATE_MARKER}"
+    return "${SESSION_RESTART_STATUS}"
+  fi
   printf 'steam-remote: a required process exited\n' >&2
   return 1
 }
@@ -693,6 +811,20 @@ report() {
   [[ "${healthy}" == true ]]
 }
 
+# Host-side image updaters call this before replacing the container: exit 0
+# approves the update, 75 (EX_TEMPFAIL) tells Watchtower and systemd
+# ExecCondition alike to skip and retry later. Only a parked session — no
+# stream, game, or download for at least five minutes — approves.
+update_gate() {
+  local state
+  state=$(lifecycle_value state error)
+
+  if [[ "${AUTO_UPDATE}" != 0 && "${state}" == parked ]]; then
+    return 0
+  fi
+  return 75
+}
+
 report_format() {
   case "${1:-}" in
     "") printf 'text\n' ;;
@@ -711,7 +843,15 @@ main() {
   case "${command}" in
     run)
       [[ $# -eq 1 ]] || { printf 'usage: steam-remote run\n' >&2; return 2; }
-      run_session
+      local session_status
+      while :; do
+        session_status=0
+        run_session || session_status=$?
+        [[ "${session_status}" -eq "${SESSION_RESTART_STATUS}" ]] || return "${session_status}"
+        cleanup
+        children=()
+        auxiliaries=()
+      done
       ;;
     status)
       [[ $# -le 2 ]] || { printf 'usage: steam-remote status [--json]\n' >&2; return 2; }
@@ -723,8 +863,12 @@ main() {
       format=$(report_format "${2:-}" health)
       report "${format}"
       ;;
+    update-gate)
+      [[ $# -eq 1 ]] || { printf 'usage: steam-remote update-gate\n' >&2; return 2; }
+      update_gate
+      ;;
     *)
-      printf 'usage: steam-remote {run|status|health} [--json]\n' >&2
+      printf 'usage: steam-remote {run|status|health|update-gate} [--json]\n' >&2
       return 2
       ;;
   esac

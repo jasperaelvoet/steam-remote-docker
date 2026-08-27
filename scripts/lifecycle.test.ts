@@ -99,6 +99,24 @@ assert_equal 42 "$(printf '%s\n' "$node_fixture" | pipewire_node_ids)" 'Gamescop
 assert_equal true "$(printf 'state: "running"\n' | pipewire_node_state)" 'running PipeWire state'
 assert_equal false "$(printf 'state: "suspended"\n' | pipewire_node_state)" 'idle PipeWire state'
 
+if auto_update_due active 0 103900 0; then
+  fail 'active session must not auto-update'
+fi
+if auto_update_due parked 100000 103899 0; then
+  fail 'freshly parked session must not auto-update'
+fi
+auto_update_due parked 100000 103900 0 || fail 'long-parked session auto-updates'
+if auto_update_due parked 100000 103900 100000; then
+  fail 'recent restart suppresses auto-update'
+fi
+if env STEAM_REMOTE_AUTO_UPDATE=0 bash -c "source '$1'; auto_update_due parked 100000 103900 0"; then
+  fail 'disabled auto-update must never trigger'
+fi
+
+gate_status=0
+update_gate || gate_status=$?
+assert_equal 75 "$gate_status" 'update gate stays closed without lifecycle data'
+
 printf 'Lifecycle fixture checks passed.\n'
 `;
 

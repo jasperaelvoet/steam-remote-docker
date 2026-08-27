@@ -22,11 +22,6 @@ services:
     network_mode: host
     ipc: host
     read_only: true
-    tmpfs:
-      - /run:rw,exec,nosuid,size=1g,mode=755
-      - /tmp:rw,exec,nosuid,size=8g,mode=1777
-      - /var/tmp:rw,exec,nosuid,size=2g,mode=1777
-      - /var/lib/xkb:rw,exec,nosuid,size=64m,mode=1777
     volumes:
       - ./steam-data:/mnt/data:rw
     # Optional — defaults are for a 4K@60 client:
@@ -37,8 +32,9 @@ services:
 ```
 
 Every entry maps 1:1 to a `docker run` flag — see
-[why each flag is needed](./docker.md#why-each-flag), including
-[what the tmpfs mounts are for](./docker.md#why-the-tmpfs-mounts).
+[why each flag is needed](./docker.md#why-each-flag). Writable scratch space
+is [handled inside the container](./docker.md#scratch-space-is-automatic), so
+no `tmpfs:` section is needed.
 
 ## 3. Start it
 
@@ -55,6 +51,10 @@ docker compose logs -f            # watch the session
 docker compose down               # stop (data is safe in ./steam-data)
 docker compose pull && docker compose up -d   # update the image
 ```
+
+To update the image automatically — only while nobody is playing — add
+Watchtower with the built-in idle gate: see
+[Automatic updates](../auto-updates.md#docker--docker-compose-watchtower).
 
 The health check is built into the image, so `docker compose ps` shows
 `healthy`/`unhealthy` without any extra configuration.

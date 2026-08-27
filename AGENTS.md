@@ -18,7 +18,7 @@ plain container with no host deployment manager in scope.
   gamepad UI. Do not add alternate sessions, recovery
   servers, or per-game wrappers.
 - Defaults are `3840x2160@60`. The three documented display environment
-  variables are the entire configuration surface.
+  variables and the auto-update switch are the entire configuration surface.
 
 ## Repository shape
 
@@ -28,7 +28,8 @@ plain container with no host deployment manager in scope.
 - `.github/workflows/container.yml` validates and publishes the image.
 
 Runtime diagnostics are `steam-remote status [--json]` and `steam-remote
-health [--json]`.
+health [--json]`. `steam-remote update-gate` exits zero only while the
+session is parked, for host-side image updaters.
 
 ## Development
 

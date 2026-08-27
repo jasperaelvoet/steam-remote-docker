@@ -32,10 +32,6 @@ AutoUpdate=registry
 Network=host
 ReadOnly=true
 PodmanArgs=--privileged --ipc host
-Tmpfs=/run:rw,exec,nosuid,size=1g,mode=755
-Tmpfs=/tmp:rw,exec,nosuid,size=8g,mode=1777
-Tmpfs=/var/tmp:rw,exec,nosuid,size=2g,mode=1777
-Tmpfs=/var/lib/xkb:rw,exec,nosuid,size=64m,mode=1777
 Volume=/var/lib/steam-remote/steam-data:/mnt/data:rw
 # Optional — defaults are for a 4K@60 client:
 # Environment=STEAM_REMOTE_WIDTH=1920
@@ -51,8 +47,9 @@ WantedBy=multi-user.target
 ```
 
 Every key maps 1:1 to a `docker run`/`podman run` flag — see
-[why each flag is needed](./docker.md#why-each-flag), including
-[what the tmpfs mounts are for](./docker.md#why-the-tmpfs-mounts).
+[why each flag is needed](./docker.md#why-each-flag). Writable scratch space
+is [handled inside the container](./docker.md#scratch-space-is-automatic), so
+no `Tmpfs=` lines are needed.
 
 ## 3. Start it
 
@@ -79,15 +76,8 @@ sudo systemctl restart steam-remote.service
 ### Automatic image updates
 
 `AutoUpdate=registry` marks the container for Podman's auto-update machinery.
-Enable the timer and Podman will pull new images and restart the service
-when one appears:
-
-```bash
-sudo systemctl enable --now podman-auto-update.timer
-```
-
-Your library and login are untouched by updates — they live in
-`/var/lib/steam-remote/steam-data`, not the image. Prefer manual updates?
-Drop the `AutoUpdate` line and run
-`sudo podman pull ghcr.io/jasperaelvoet/steam-remote-docker:latest && sudo systemctl restart steam-remote.service`
-yourself.
+Enable the timer — and gate it so updates only happen while the session is
+idle — as shown in
+[Automatic updates](../auto-updates.md#podman-quadlet-podman-auto-update).
+Your library and login are untouched by updates; they live in
+`/var/lib/steam-remote/steam-data`, not the image.

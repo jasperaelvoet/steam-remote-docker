@@ -27,12 +27,14 @@ Startup is strictly ordered: each stage waits for the previous one's socket
 socket) before continuing. When everything is up, the entrypoint prints
 `steam-remote: ready at WxH@FPS` and waits.
 
-**Every core process is required.** If any of them exits, `run` logs
-`a required process exited` and returns nonzero, stopping the container.
-There is deliberately no in-place recovery or partial restart — the restart
-policy restarts the whole session, which is the only state the design
-supports. The lifecycle supervisor is the one *auxiliary* process: it can die
-without taking the session down (health degrades instead).
+**Every core process is required.** If any of them exits unexpectedly, `run`
+logs `a required process exited` and returns nonzero, stopping the container.
+There is deliberately no partial restart — the only in-place restart is the
+deliberate, whole-session one used for
+[idle-time updates](../auto-updates.md); anything else is
+left to the container restart policy. The lifecycle supervisor is the one
+*auxiliary* process: it can die without taking the session down (health
+degrades instead).
 
 ## Privilege model
 
@@ -50,9 +52,11 @@ system bus, and the lifecycle supervisor. Runtime preparation:
 
 ## Read-only root
 
-The image declares nothing writable except `/mnt/data`. At runtime, tmpfs
-mounts provide `/run`, `/tmp`, `/var/tmp`, and `/var/lib/xkb`
-([what each holds](../setup/docker.md#why-the-tmpfs-mounts)). The split is an
+The image declares nothing writable except `/mnt/data`. The entrypoint
+mounts its own tmpfs scratch space for `/run`, `/tmp`, `/var/tmp`, and
+`/var/lib/xkb` at startup — possible because the container runs privileged —
+so no `--tmpfs` flags are required
+([what each holds](../setup/docker.md#scratch-space-is-automatic)). The split is an
 enforced invariant: system software changes require an image rebuild, and
 Steam's own updates land in the volume. This is what makes image updates a
 pull-and-replace operation with no migration steps.
@@ -99,6 +103,18 @@ the [idle lifecycle](../idle-lifecycle.md). Each tick it:
    `state/streaming/game/update/controller/heartbeat` to
    `/run/steam-remote/lifecycle`, which is what `status` and `health` read. A
    heartbeat older than 10 seconds marks the controller unhealthy.
+7. **Hibernates the parked session** — once the parked limiter is confirmed,
+   it freezes Gamescope, the Xwaylands, and the Steam web helper with
+   `SIGSTOP`; the main Steam process keeps running so the host stays
+   discoverable and the kernel still completes incoming connections. Any
+   wake signal — or any detector uncertainty — thaws everything with
+   `SIGCONT` before the limiter is raised.
+8. **Schedules update restarts** — once the session has been parked for an
+   hour and at least 24 hours have passed since the last restart (stamp in
+   the data folder), it drops a restart marker and terminates the session's
+   processes. The entrypoint sees the marker, cleans up, and runs the whole
+   session again in-process — Steam applies pending client updates on the
+   way up. `STEAM_REMOTE_AUTO_UPDATE=0` disables this step.
 
 The design constraint throughout: the supervisor may only ever throttle a
 provably idle session. Any detection or control failure keeps full rate and

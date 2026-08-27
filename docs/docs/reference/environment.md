@@ -15,6 +15,15 @@ capture size and frame rate with the client within this ceiling.
 See [Configuration](../configuration.md) for how the ceiling interacts with
 client negotiation, aspect ratios, and letterboxing.
 
+## Updates
+
+| Variable | Default | Meaning |
+| --- | ---: | --- |
+| `STEAM_REMOTE_AUTO_UPDATE` | `1` | Apply Steam client updates while parked (at most one session restart per day) and let `steam-remote update-gate` approve container image updates. `0` disables both |
+
+See [Automatic updates](../auto-updates.md) for when exactly updates happen
+and why they can never interrupt anything.
+
 ## Advanced tuning
 
 :::warning[Escape hatches, not configuration]
