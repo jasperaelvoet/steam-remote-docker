@@ -13,6 +13,7 @@ readonly GAMESCOPE_DISPLAY=gamescope-0
 readonly GAMESCOPE_SOCKET=${RUNTIME_DIR}/${GAMESCOPE_DISPLAY}
 readonly LIFECYCLE_FILE=${CONTROL_DIR}/lifecycle
 readonly CONTENT_LOG=${HOME_DIR}/.steam/steam/logs/content_log.txt
+readonly STREAMING_LOG=${HOME_DIR}/.steam/steam/logs/streaming_log.txt
 readonly WIDTH=${STEAM_REMOTE_WIDTH:-3840}
 readonly HEIGHT=${STEAM_REMOTE_HEIGHT:-2160}
 readonly FPS=${STEAM_REMOTE_FPS:-60}
@@ -251,6 +252,29 @@ poll_update_activity() {
   fi
 }
 
+# Real Steam Link clients start sessions over UDP, which leaves no
+# connection state to observe — but Steam appends to streaming_log.txt the
+# moment a session request arrives, and leaves it untouched while idle. Any
+# growth therefore signals a client connecting (or streaming), and wakes a
+# hibernated session before Steam needs its suspended helpers.
+poll_stream_request_activity() {
+  local path=$1
+  local inode
+  local size
+
+  if ! read -r inode size < <(file_identity_size "${path}"); then
+    REQUEST_STATUS=false
+    return
+  fi
+  if [[ "${inode}" != "${REQUEST_LOG_INODE}" || "${size}" -ne "${REQUEST_LOG_OFFSET}" ]]; then
+    REQUEST_LOG_INODE=${inode}
+    REQUEST_LOG_OFFSET=${size}
+    REQUEST_STATUS=true
+    return
+  fi
+  REQUEST_STATUS=false
+}
+
 remote_play_connection_activity() {
   local sockets
 
@@ -472,11 +496,13 @@ activity_reasons() {
   local streaming=$1
   local game=$2
   local update=$3
+  local request=$4
   local reasons=
 
   [[ "${streaming}" == true ]] && reasons=stream
   [[ "${game}" == true ]] && reasons=${reasons:+${reasons},}game
   [[ "${update}" == true ]] && reasons=${reasons:+${reasons},}update
+  [[ "${request}" == true ]] && reasons=${reasons:+${reasons},}request
   printf '%s\n' "${reasons:-none}"
 }
 
@@ -508,12 +534,21 @@ lifecycle_supervisor() {
   UPDATE_STATUS=unknown
   UPDATE_ACTIVE_IDS=
 
+  if read -r REQUEST_LOG_INODE REQUEST_LOG_OFFSET < <(file_identity_size "${STREAMING_LOG}"); then
+    :
+  else
+    REQUEST_LOG_INODE=missing
+    REQUEST_LOG_OFFSET=0
+  fi
+  REQUEST_STATUS=false
+
   while :; do
     now=$(date +%s)
     streaming=$(stream_activity)
     game=$(game_activity /proc)
     poll_update_activity "${CONTENT_LOG}"
-    activity=$(combine_activity "${streaming}" "${game}" "${UPDATE_STATUS}")
+    poll_stream_request_activity "${STREAMING_LOG}"
+    activity=$(combine_activity "${streaming}" "${game}" "${UPDATE_STATUS}" "${REQUEST_STATUS}")
     evaluate_lifecycle "${activity}" "${quiet_since}" "${now}"
     quiet_since=${NEXT_QUIET_SINCE}
     lifecycle_state=${NEXT_LIFECYCLE_STATE}
@@ -539,7 +574,7 @@ lifecycle_supervisor() {
         elif [[ "${activity}" == unknown ]]; then
           printf 'steam-remote: Gamescope restored to full rate after detector uncertainty\n'
         else
-          reasons=$(activity_reasons "${streaming}" "${game}" "${UPDATE_STATUS}")
+          reasons=$(activity_reasons "${streaming}" "${game}" "${UPDATE_STATUS}" "${REQUEST_STATUS}")
           printf 'steam-remote: Gamescope active (%s)\n' "${reasons}"
         fi
       else
@@ -563,7 +598,7 @@ lifecycle_supervisor() {
       case "${lifecycle_state}" in
         waiting) printf 'steam-remote: idle countdown started (%ss)\n' "${IDLE_SECONDS}" ;;
         active)
-          reasons=$(activity_reasons "${streaming}" "${game}" "${UPDATE_STATUS}")
+          reasons=$(activity_reasons "${streaming}" "${game}" "${UPDATE_STATUS}" "${REQUEST_STATUS}")
           printf 'steam-remote: lifecycle active (%s)\n' "${reasons}"
           ;;
         error) printf 'steam-remote: lifecycle detection or control degraded; keeping full rate\n' >&2 ;;

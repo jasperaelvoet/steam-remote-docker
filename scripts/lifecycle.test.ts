@@ -61,6 +61,25 @@ printf '[2026-08-26] AppID 30 update completed : Success\n' >>"$content_log"
 poll_update_activity "$content_log"
 assert_equal false "$UPDATE_STATUS" 'completion after log rotation'
 
+request_log="$fixture_root/streaming_log.txt"
+printf 'boot noise\n' >"$request_log"
+read -r REQUEST_LOG_INODE REQUEST_LOG_OFFSET < <(file_identity_size "$request_log")
+REQUEST_STATUS=false
+poll_stream_request_activity "$request_log"
+assert_equal false "$REQUEST_STATUS" 'quiet streaming log stays idle'
+printf 'session request\n' >>"$request_log"
+poll_stream_request_activity "$request_log"
+assert_equal true "$REQUEST_STATUS" 'streaming log growth signals a request'
+poll_stream_request_activity "$request_log"
+assert_equal false "$REQUEST_STATUS" 'unchanged streaming log idles again'
+replacement="$fixture_root/streaming_log.next"
+printf 'rotated\n' >"$replacement"
+mv -f "$replacement" "$request_log"
+poll_stream_request_activity "$request_log"
+assert_equal true "$REQUEST_STATUS" 'rotated streaming log signals a request'
+poll_stream_request_activity "$fixture_root/missing-streaming-log"
+assert_equal false "$REQUEST_STATUS" 'missing streaming log stays idle'
+
 mkdir -p "$fixture_root/proc/100" "$fixture_root/proc/200"
 printf 'PATH=/usr/bin\0SteamAppId=123\0' >"$fixture_root/proc/100/environ"
 assert_equal true "$(game_activity "$fixture_root/proc")" 'running game process'

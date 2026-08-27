@@ -87,8 +87,11 @@ see [Streaming pipeline](./streaming.md).
 The supervisor is a once-per-second loop in the entrypoint script that drives
 the [idle lifecycle](../idle-lifecycle.md). Each tick it:
 
-1. **Detects streaming** — established TCP connections on `27036`, plus the
-   state of Gamescope's PipeWire `Video/Source` node (`pw-cli`).
+1. **Detects streaming** — established TCP connections on `27036`, the state
+   of Gamescope's PipeWire `Video/Source` node (`pw-cli`), and growth of
+   Steam's `streaming_log.txt` (session requests arrive over UDP and leave
+   no connection state, but Steam logs them instantly — this is what wakes a
+   hibernated session before Steam needs its frozen helpers).
 2. **Detects games** — scans `/proc/*/environ` for
    `SteamAppId`/`SteamGameId`.
 3. **Detects updates** — tails Steam's `content_log.txt` incrementally

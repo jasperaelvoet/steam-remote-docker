@@ -9,7 +9,7 @@ stopping Steam, games, or downloads.
 
 Gamescope stays at the configured full rate while **any** of these is true:
 
-- A Remote Play stream is connected
+- A Remote Play stream is connected, or a client is requesting one
 - A Steam game is running
 - A download, update, validation, or patch operation is actively running
 
@@ -58,10 +58,11 @@ The main Steam process and Xwayland stay running, so the host remains
 discoverable and keeps accepting connections — Steam is an X11 client, and
 freezing its X server would stall the thread that answers discovery probes.
 With the UI helper frozen nothing draws, so the running Xwayland costs
-effectively nothing. When a client connects (or any other activity appears),
-the controller thaws everything with `SIGCONT` *before* restoring the full
-frame rate — wake is effectively instant. Detection uncertainty also thaws
-the session: when in doubt, everything runs.
+effectively nothing. The moment a client asks for a session — Steam appends
+to its streaming log immediately, which the controller watches — everything
+is thawed with `SIGCONT` *before* Steam needs its frozen helpers, and the
+full frame rate is restored. Wake is effectively instant. Detection
+uncertainty also thaws the session: when in doubt, everything runs.
 
 ## Failing safe
 
