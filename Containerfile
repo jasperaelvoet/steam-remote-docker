@@ -20,7 +20,7 @@ COPY --chown=builder:builder container/gamescope/ ./
 USER builder
 
 RUN makepkg --syncdeps --noconfirm --cleanbuild --clean \
-    && install -m 0644 gamescope-3.16.26-1.1-x86_64.pkg.tar.zst /packages/gamescope.pkg.tar.zst
+    && install -m 0644 gamescope-3.16.26-1.2-x86_64.pkg.tar.zst /packages/gamescope.pkg.tar.zst
 
 FROM archlinux:base AS cursor-shim-builder
 

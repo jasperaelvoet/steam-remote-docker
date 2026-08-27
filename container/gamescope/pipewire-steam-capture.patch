@@ -1,98 +1,126 @@
 --- a/src/pipewire.cpp
 +++ b/src/pipewire.cpp
-@@ -3,6 +3,7 @@
- #include <fcntl.h>
- #include <poll.h>
- #include <stdio.h>
-+#include <stdlib.h>
- #include <sys/mman.h>
- #include <unistd.h>
- 
-@@ -102,34 +103,27 @@
+@@ -101,7 +101,13 @@
+ 	struct spa_fraction framerate = SPA_FRACTION(0, 1);
  	uint64_t modifier = DRM_FORMAT_MOD_LINEAR;
  
++	// GAMESCOPE_PIPEWIRE_NO_DMABUF=1 withholds the modifier (DMA-BUF) pods so
++	// consumers negotiate the always-safe shared-memory path instead.
++	const char *no_dmabuf_env = getenv("GAMESCOPE_PIPEWIRE_NO_DMABUF");
++	const bool offer_dmabuf = (no_dmabuf_env == nullptr || no_dmabuf_env[0] == '0');
++
  	struct spa_pod_frame obj_frame, choice_frame;
--	spa_pod_builder_push_object(builder, &obj_frame, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
--	spa_pod_builder_add(builder,
--		SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video),
--		SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw),
--		SPA_FORMAT_VIDEO_format, SPA_POD_Id(format),
--		SPA_FORMAT_VIDEO_size, SPA_POD_Rectangle(&size),
--		SPA_FORMAT_VIDEO_framerate, SPA_POD_Fraction(&framerate),
--		SPA_FORMAT_VIDEO_requested_size, SPA_POD_CHOICE_RANGE_Rectangle( &min_requested_size, &min_requested_size, &max_requested_size ),
--		SPA_FORMAT_VIDEO_gamescope_focus_appid, SPA_POD_CHOICE_RANGE_Long( 0ll, INT64_MIN, INT64_MAX ),
--		0);
--	if (format == SPA_VIDEO_FORMAT_NV12) {
-+	// A single spa data block cannot describe NV12's two planes, so Mesa rejects
-+	// the resulting DMA-BUF import. Advertise the zero-copy (modifier) variant only
-+	// for single-plane formats; NV12 falls back to the shared-memory pod below.
-+	if (format != SPA_VIDEO_FORMAT_NV12) {
-+		spa_pod_builder_push_object(builder, &obj_frame, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
- 		spa_pod_builder_add(builder,
--			SPA_FORMAT_VIDEO_colorMatrix, SPA_POD_CHOICE_ENUM_Id(3,
--							SPA_VIDEO_COLOR_MATRIX_BT601,
--							SPA_VIDEO_COLOR_MATRIX_BT601,
--							SPA_VIDEO_COLOR_MATRIX_BT709),
--			SPA_FORMAT_VIDEO_colorRange, SPA_POD_CHOICE_ENUM_Id(3,
--							SPA_VIDEO_COLOR_RANGE_16_235,
--							SPA_VIDEO_COLOR_RANGE_16_235,
--							SPA_VIDEO_COLOR_RANGE_0_255),
-+			SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video),
-+			SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw),
-+			SPA_FORMAT_VIDEO_format, SPA_POD_Id(format),
-+			SPA_FORMAT_VIDEO_size, SPA_POD_Rectangle(&size),
-+			SPA_FORMAT_VIDEO_framerate, SPA_POD_Fraction(&framerate),
-+			SPA_FORMAT_VIDEO_requested_size, SPA_POD_CHOICE_RANGE_Rectangle( &min_requested_size, &min_requested_size, &max_requested_size ),
-+			SPA_FORMAT_VIDEO_gamescope_focus_appid, SPA_POD_CHOICE_RANGE_Long( 0ll, INT64_MIN, INT64_MAX ),
- 			0);
-+		spa_pod_builder_prop(builder, SPA_FORMAT_VIDEO_modifier, SPA_POD_PROP_FLAG_MANDATORY);
-+		spa_pod_builder_push_choice(builder, &choice_frame, SPA_CHOICE_Enum, 0);
-+		spa_pod_builder_long(builder, modifier); // default
-+		spa_pod_builder_long(builder, modifier);
-+		spa_pod_builder_pop(builder, &choice_frame);
-+		params.push_back((const struct spa_pod *) spa_pod_builder_pop(builder, &obj_frame));
- 	}
--	spa_pod_builder_prop(builder, SPA_FORMAT_VIDEO_modifier, SPA_POD_PROP_FLAG_MANDATORY);
--	spa_pod_builder_push_choice(builder, &choice_frame, SPA_CHOICE_Enum, 0);
--	spa_pod_builder_long(builder, modifier); // default
--	spa_pod_builder_long(builder, modifier);
--	spa_pod_builder_pop(builder, &choice_frame);
--	params.push_back((const struct spa_pod *) spa_pod_builder_pop(builder, &obj_frame));
++	if (offer_dmabuf) {
+ 	spa_pod_builder_push_object(builder, &obj_frame, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
+ 	spa_pod_builder_add(builder,
+ 		SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video),
+@@ -130,6 +136,7 @@
+ 	spa_pod_builder_long(builder, modifier);
+ 	spa_pod_builder_pop(builder, &choice_frame);
+ 	params.push_back((const struct spa_pod *) spa_pod_builder_pop(builder, &obj_frame));
++	}
  
  	spa_pod_builder_push_object(builder, &obj_frame, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
  	spa_pod_builder_add(builder,
-@@ -165,7 +159,12 @@
+@@ -164,8 +171,10 @@
+ {
  	std::vector<const struct spa_pod *> params;
  
- 	build_format_params(builder, SPA_VIDEO_FORMAT_BGRx, params);
--	build_format_params(builder, SPA_VIDEO_FORMAT_NV12, params);
-+	// Consumers that prefer NV12 pick it even when only offered as shared memory,
-+	// which costs a full frame copy per frame. Withholding it leaves BGRx, whose
-+	// DMA-BUF pod keeps the capture zero-copy.
-+	const char *no_nv12 = getenv("GAMESCOPE_PIPEWIRE_NO_NV12");
-+	if (no_nv12 == nullptr || no_nv12[0] == '0')
-+		build_format_params(builder, SPA_VIDEO_FORMAT_NV12, params);
+-	build_format_params(builder, SPA_VIDEO_FORMAT_BGRx, params);
++	// NV12 first: consumers that prefer it (Steam) then negotiate its DMA-BUF
++	// variant, which the encoder can import directly with no conversion.
+ 	build_format_params(builder, SPA_VIDEO_FORMAT_NV12, params);
++	build_format_params(builder, SPA_VIDEO_FORMAT_BGRx, params);
  
  	return params;
  }
-@@ -376,7 +375,10 @@
+@@ -257,11 +266,21 @@
+ 	case SPA_DATA_DmaBuf:
+ 		dmabuf = tex->dmabuf();
+ 		assert(dmabuf.n_planes == 1);
+-		chunk->offset = dmabuf.offset[0];
+-		chunk->stride = dmabuf.stride[0];
+-		chunk->size = dmabuf.height * chunk->stride;
+ 		if (state->video_info.format == SPA_VIDEO_FORMAT_NV12) {
+-			chunk->size += ((dmabuf.height + 1)/2 * chunk->stride);
++			chunk->offset = (uint32_t)tex->lumaOffset();
++			chunk->stride = tex->lumaRowPitch();
++			chunk->size = tex->height() * chunk->stride;
++			if (spa_buffer->n_datas >= 2) {
++				struct spa_chunk *chroma = spa_buffer->datas[1].chunk;
++				chroma->flags = chunk->flags;
++				chroma->offset = (uint32_t)tex->chromaOffset();
++				chroma->stride = tex->chromaRowPitch();
++				chroma->size = ((tex->height() + 1) / 2) * chroma->stride;
++			}
++		} else {
++			chunk->offset = dmabuf.offset[0];
++			chunk->stride = dmabuf.stride[0];
++			chunk->size = dmabuf.height * chunk->stride;
+ 		}
+ 		break;
+ 	default:
+@@ -376,7 +395,11 @@
  	uint8_t buf[1024];
  	struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(buf, sizeof(buf));
  
 -	int buffers = 4;
-+	// Eight buffers stop the shared-memory capture starving at 4K60, but a DMA-BUF
-+	// export of the same frame is far larger, so keep that pool small enough for the
-+	// consumer to still allocate its own conversion surfaces.
-+	const int buffers = state->dmabuf ? 3 : 8;
++	// The DMA-BUF consumer holds frames through import and encode, and the
++	// shared-memory path starves at 4K60 with only four buffers.
++	int buffers = state->dmabuf ? 6 : 8;
++	// NV12 over DMA-BUF is one BO but two planes, described as two blocks.
++	int blocks = (state->dmabuf && state->video_info.format == SPA_VIDEO_FORMAT_NV12) ? 2 : 1;
  	int shm_size = state->shm_stride * state->video_info.size.height;
  	if (state->video_info.format == SPA_VIDEO_FORMAT_NV12) {
  		shm_size += ((state->video_info.size.height + 1) / 2) * state->shm_stride;
-@@ -386,7 +388,7 @@
+@@ -386,8 +409,8 @@
  	const struct spa_pod *buffers_param =
  		(const struct spa_pod *) spa_pod_builder_add_object(&builder,
  		SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers,
 -		SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(buffers, 1, 8),
-+		SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(buffers, buffers, 8),
- 		SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(1),
+-		SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(1),
++		SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(buffers, 4, 8),
++		SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(blocks),
  		SPA_PARAM_BUFFERS_size, SPA_POD_Int(shm_size),
  		SPA_PARAM_BUFFERS_stride, SPA_POD_Int(state->shm_stride),
+ 		SPA_PARAM_BUFFERS_dataType, SPA_POD_CHOICE_FLAGS_Int(data_type));
+@@ -536,12 +559,33 @@
+ 
+ 		buffer->type = SPA_DATA_DmaBuf;
+ 
+-		spa_data->type = SPA_DATA_DmaBuf;
+-		spa_data->flags = SPA_DATA_FLAG_READABLE;
+-		spa_data->fd = dmabuf.fd[0];
+-		spa_data->mapoffset = dmabuf.offset[0];
+-		spa_data->maxsize = size;
+-		spa_data->data = nullptr;
++		if (state->video_info.format == SPA_VIDEO_FORMAT_NV12) {
++			// NV12 lives in one BO but importers need one data block per
++			// plane, at the offsets and pitches Vulkan reported for the
++			// linear image; a single-block description is rejected.
++			if (spa_buffer->n_datas < 2) {
++				pwr_log.errorf("NV12 DMA-BUF needs two data blocks");
++				goto error;
++			}
++			for (int i = 0; i < 2; i++) {
++				struct spa_data *plane = &spa_buffer->datas[i];
++				plane->type = SPA_DATA_DmaBuf;
++				plane->flags = SPA_DATA_FLAG_READABLE;
++				plane->fd = dmabuf.fd[0];
++				plane->mapoffset = (uint32_t)(i == 0 ?
++					buffer->texture->lumaOffset() :
++					buffer->texture->chromaOffset());
++				plane->maxsize = size;
++				plane->data = nullptr;
++			}
++		} else {
++			spa_data->type = SPA_DATA_DmaBuf;
++			spa_data->flags = SPA_DATA_FLAG_READABLE;
++			spa_data->fd = dmabuf.fd[0];
++			spa_data->mapoffset = dmabuf.offset[0];
++			spa_data->maxsize = size;
++			spa_data->data = nullptr;
++		}
+ 	} else if (is_memfd) {
+ 		int fd = anonymous_shm_open();
+ 		if (fd < 0) {

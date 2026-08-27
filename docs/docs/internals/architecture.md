@@ -17,7 +17,7 @@ catatonit (PID 1, reaps orphans, forwards signals)
     ├── pipewire-pulse                 (as steam)
     ├── gamescope --backend headless   (as steam)
     │   ├── Xwayland ×2 (DPI-corrected wrapper)
-    │   └── steam -pipewire -gamepadui
+    │   └── steam -pipewire-dmabuf -gamepadui
     │       └── games…
     └── lifecycle supervisor           (auxiliary shell loop)
 ```
@@ -67,7 +67,7 @@ Gamescope runs headless (no physical display) at the configured render
 ceiling, with `--force-windows-fullscreen`, real-time scheduling (`--rt`,
 enabled by `cap_sys_nice` on the binary), and two Xwayland servers — one for
 Steam's main UI, one keeping overlays and popups routed correctly. Steam runs
-in gamepad UI mode (`-gamepadui`) with PipeWire capture (`-pipewire`), which
+in gamepad UI mode (`-gamepadui`) with PipeWire DMA-BUF capture (`-pipewire-dmabuf`), which
 is what Remote Play streams.
 
 The Xwayland instances are launched through a generated wrapper that passes

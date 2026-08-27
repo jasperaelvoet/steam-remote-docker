@@ -34,19 +34,18 @@ rebuilding the image. Reach for them only when a symptom points here.
 
 | Variable | Default | Meaning |
 | --- | ---: | --- |
-| `STEAM_REMOTE_ZERO_COPY` | `1` | Steers Steam onto the zero-copy BGRx DMA-BUF capture path (~3x less capture CPU). Set to `0` to revert to the always-safe NV12 shared-memory path |
+| `STEAM_REMOTE_ZERO_COPY` | `1` | Shares GPU-converted NV12 frames with the encoder as DMA-BUFs — no CPU copies in the capture path. Set to `0` to revert to the always-safe NV12 shared-memory path |
 | `STEAM_REMOTE_PHYS_MM` | `596x335` | Physical size (mm) advertised for the virtual display. Determines the DPI that Steam and Xwayland derive, and therefore host-side UI and cursor scale |
 | `STEAM_REMOTE_CURSOR_CANVAS` | `96` | Side of the square bitmap every streamed cursor is placed on, in pixels |
 | `STEAM_REMOTE_CURSOR_GLYPH` | `30` | Size the visible cursor glyph is resampled to within that canvas — effectively the cursor's apparent size on the client |
 
 ### About the zero-copy path
 
-Withholding NV12 forces Steam onto a zero-copy BGRx DMA-BUF capture, which
-the GPU converts to NV12 in place — roughly three times less CPU than the
-NV12 shared-memory path. The only observed failure is a transient VA surface
-allocation during a **mid-session client resolution change**, which pinning
-the client resolution avoids. If your client changes resolution mid-session
-and the stream drops, set `STEAM_REMOTE_ZERO_COPY=0`. See
+Gamescope converts each frame to NV12 on the GPU and hands Steam that exact
+buffer as a DMA-BUF; the hardware encoder imports it directly. If streaming
+misbehaves in a way that points at capture (broken image, stalls, very low
+frame rate), `STEAM_REMOTE_ZERO_COPY=0` is the clean way to take the whole
+DMA-BUF path out of the equation. See
 [Streaming pipeline](../internals/streaming.md#zero-copy-capture) for the
 mechanism.
 

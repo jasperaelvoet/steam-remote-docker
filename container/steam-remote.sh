@@ -18,13 +18,16 @@ readonly WIDTH=${STEAM_REMOTE_WIDTH:-3840}
 readonly HEIGHT=${STEAM_REMOTE_HEIGHT:-2160}
 readonly FPS=${STEAM_REMOTE_FPS:-60}
 readonly PHYS_MM=${STEAM_REMOTE_PHYS_MM:-596x335}
-# Withholding NV12 forces Steam onto a zero-copy BGRx DMA-BUF capture, which the
-# GPU converts to NV12 in-place: ~3x less CPU than the NV12 shared-memory path
-# (Steam always prefers NV12 when both are offered, so it must be withheld). The
-# only observed failure is a transient VA surface allocation during a mid-session
-# resolution change, which the pinned client resolution avoids; set to 0 to
-# revert to the always-safe shared-memory path.
+# Gamescope converts frames to NV12 on the GPU and exports them as two-plane
+# DMA-BUFs that the encoder imports directly: no CPU copies or conversions
+# anywhere in the capture path. Set to 0 to withhold DMA-BUF entirely and
+# fall back to the always-safe NV12 shared-memory path.
 readonly ZERO_COPY=${STEAM_REMOTE_ZERO_COPY:-1}
+if [[ "${ZERO_COPY}" == 0 ]]; then
+  readonly NO_DMABUF=1
+else
+  readonly NO_DMABUF=0
+fi
 readonly CURSOR_CANVAS=${STEAM_REMOTE_CURSOR_CANVAS:-96}
 readonly CURSOR_GLYPH=${STEAM_REMOTE_CURSOR_GLYPH:-30}
 readonly IDLE_SECONDS=300
@@ -750,7 +753,7 @@ run_session() {
       STEAM_REMOTE_CURSOR_GLYPH="${CURSOR_GLYPH}" \
       FSR4_UPGRADE=1 \
       GAMESCOPE_HEADLESS_PHYS_MM="${PHYS_MM}" \
-      GAMESCOPE_PIPEWIRE_NO_NV12="${ZERO_COPY}" \
+      GAMESCOPE_PIPEWIRE_NO_DMABUF="${NO_DMABUF}" \
       WLR_XWAYLAND="${CONTROL_DIR}/xwayland" \
     gamescope \
       -e \
@@ -764,7 +767,7 @@ run_session() {
       -h "${HEIGHT}" \
       -r "${FPS}" \
       -- \
-      /usr/bin/steam -pipewire -gamepadui
+      /usr/bin/steam -pipewire-dmabuf -gamepadui
 
   wait_for_socket "${GAMESCOPE_SOCKET}"
   start_auxiliary lifecycle lifecycle_supervisor "${content_log_inode}" "${content_log_offset}"

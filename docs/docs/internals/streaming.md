@@ -10,8 +10,8 @@ each mechanism, mostly so future maintainers know why they exist.
 ```
 game ── Vulkan/RADV ──▶ Gamescope (headless, composits at ≤ WxH@FPS)
                              │
-                             ▼  PipeWire Video/Source node
-                        Steam (-pipewire)
+                             ▼  PipeWire Video/Source node (NV12 DMA-BUF)
+                        Steam (-pipewire-dmabuf)
                              │  VA-API hardware encode (H.264)
                              ▼
                         Remote Play ──▶ Steam Link client
@@ -38,23 +38,30 @@ captured.
 *Patch: `container/gamescope/pipewire-steam-capture.patch` — gated by
 `STEAM_REMOTE_ZERO_COPY` (default on).*
 
-Gamescope's PipeWire node offers capture formats to Steam. Two paths exist:
+Gamescope composites each frame, converts it to NV12 on the GPU, and shares
+that exact buffer with Steam as a DMA-BUF. Steam imports it straight into
+the VA-API encoder: no conversion left to do and no CPU copy anywhere in the
+capture path.
 
-- **NV12 over shared memory** — Gamescope converts frames to NV12 on the CPU
-  and copies them into shared memory buffers. Safe everywhere, but expensive.
-- **BGRx over DMA-BUF** — Steam imports the GPU buffer directly and converts
-  to NV12 on the GPU, in place. No CPU copy at all — roughly **3× less CPU**.
+Two things had to be fixed to get there:
 
-Steam always prefers NV12 when both are offered, so getting the fast path
-requires *withholding* NV12 from the zero-copy (DMA-BUF) advertisement. There
-is also a correctness reason: a single `spa` data block cannot describe
-NV12's two planes, so Mesa rejects the resulting DMA-BUF import anyway. The
-patch therefore advertises the DMA-BUF variant only for single-plane formats
-and leaves NV12 on the shared-memory pod as the fallback.
+- **Upstream's NV12 DMA-BUF advertisement was broken.** NV12 is one buffer
+  but two image planes, and upstream described it as a single PipeWire data
+  block (it carries a `TODO: support multi-planar DMA-BUF export`) —
+  consumers rightly reject that import. The patch describes both planes as
+  separate data blocks over the one BO, using the plane offsets and pitches
+  Vulkan reports for the exported image.
+- **Steam must be told to import.** The session launches Steam with
+  `-pipewire-dmabuf` (not plain `-pipewire`), which enables its DMA-BUF
+  import path for PipeWire capture.
 
-The one observed failure of the fast path is a transient VA surface
-allocation during a mid-session client resolution change — which pinning the
-client resolution avoids, and `STEAM_REMOTE_ZERO_COPY=0` sidesteps entirely.
+The patch also deepens the buffer pools (6 DMA-BUF / 8 shared-memory
+buffers) — the consumer holds frames through import and encode, and the
+upstream default of four starves at 4K60.
+
+`STEAM_REMOTE_ZERO_COPY=0` sets `GAMESCOPE_PIPEWIRE_NO_DMABUF`, which
+withholds every DMA-BUF advertisement so Steam negotiates the always-safe
+NV12 shared-memory path instead.
 
 ## Real DPI on a virtual output
 
