@@ -30,6 +30,10 @@ const requiredFiles = [
   'Containerfile',
   'README.md',
   'container/steam-remote.sh',
+  'container/gamescope/PKGBUILD',
+  'container/gamescope/pipewire-steam-capture.patch',
+  'container/gamescope/headless-output-phys-size.patch',
+  'container/cursors/cursor-shim.c',
   'package.json',
   'bun.lock',
   'tsconfig.json',
@@ -86,6 +90,10 @@ if (await exists('container/steam-remote.sh')) {
   } else {
     console.warn('ShellCheck is unavailable; skipped shell linting.');
   }
+}
+
+if (await exists('container/gamescope/PKGBUILD')) {
+  run('bash', ['-n', 'container/gamescope/PKGBUILD']);
 }
 
 const scannedFiles = [

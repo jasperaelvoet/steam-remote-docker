@@ -1,0 +1,27 @@
+--- a/src/wlserver.cpp
++++ b/src/wlserver.cpp
+@@ -1724,9 +1724,23 @@
+ 
+ 	wl_display_set_global_filter(wlserver.display, filter_global, nullptr);
+ 
+-	const struct wlserver_output_info output_info = {
++	struct wlserver_output_info output_info = {
+ 		.description = "Virtual gamescope output",
+ 	};
++	// Advertise a physical size for the virtual output when requested so X11
++	// clients (e.g. Steam) derive a real DPI instead of the 96 DPI fallback
++	// that a 0mm x 0mm output produces.
++	if ( const char *env = getenv( "GAMESCOPE_HEADLESS_PHYS_MM" ) )
++	{
++		char *end = nullptr;
++		long w = strtol( env, &end, 10 );
++		long h = ( end && *end == 'x' ) ? strtol( end + 1, &end, 10 ) : 0;
++		if ( end && *end == '\0' && w > 0 && h > 0 && w <= 10000 && h <= 10000 )
++		{
++			output_info.phys_width = (int)w;
++			output_info.phys_height = (int)h;
++		}
++	}
+ 	wlserver_set_output_info( &output_info );
+ 
+ #if HAVE_SESSION

@@ -2,3 +2,9 @@
 !Containerfile
 !container
 !container/steam-remote.sh
+!container/gamescope
+!container/gamescope/PKGBUILD
+!container/gamescope/pipewire-steam-capture.patch
+!container/gamescope/headless-output-phys-size.patch
+!container/cursors
+!container/cursors/cursor-shim.c

@@ -12,10 +12,20 @@ readonly DBUS_ADDRESS=unix:path=${RUNTIME_DIR}/bus
 readonly GAMESCOPE_DISPLAY=gamescope-0
 readonly GAMESCOPE_SOCKET=${RUNTIME_DIR}/${GAMESCOPE_DISPLAY}
 readonly LIFECYCLE_FILE=${CONTROL_DIR}/lifecycle
-readonly CONTENT_LOG=${HOME_DIR}/.local/share/Steam/logs/content_log.txt
+readonly CONTENT_LOG=${HOME_DIR}/.steam/steam/logs/content_log.txt
 readonly WIDTH=${STEAM_REMOTE_WIDTH:-3840}
 readonly HEIGHT=${STEAM_REMOTE_HEIGHT:-2160}
 readonly FPS=${STEAM_REMOTE_FPS:-60}
+readonly PHYS_MM=${STEAM_REMOTE_PHYS_MM:-596x335}
+# Withholding NV12 forces Steam onto a zero-copy BGRx DMA-BUF capture, which the
+# GPU converts to NV12 in-place: ~3x less CPU than the NV12 shared-memory path
+# (Steam always prefers NV12 when both are offered, so it must be withheld). The
+# only observed failure is a transient VA surface allocation during a mid-session
+# resolution change, which the pinned client resolution avoids; set to 0 to
+# revert to the always-safe shared-memory path.
+readonly ZERO_COPY=${STEAM_REMOTE_ZERO_COPY:-1}
+readonly CURSOR_CANVAS=${STEAM_REMOTE_CURSOR_CANVAS:-96}
+readonly CURSOR_GLYPH=${STEAM_REMOTE_CURSOR_GLYPH:-30}
 readonly IDLE_SECONDS=300
 readonly PARKED_FPS=1
 readonly LIFECYCLE_RETRY_SECONDS=5
@@ -99,16 +109,16 @@ write_lifecycle() {
 
 lifecycle_value() {
   local key=$1
-  local default=$2
+  local missing=$2
 
   if [[ ! -r "${LIFECYCLE_FILE}" ]]; then
-    printf '%s\n' "${default}"
+    printf '%s\n' "${missing}"
     return
   fi
 
-  awk -F= -v key="${key}" -v default="${default}" '
+  awk -F= -v key="${key}" -v missing="${missing}" '
     $1 == key { print substr($0, index($0, "=") + 1); found = 1; exit }
-    END { if (!found) print default }
+    END { if (!found) print missing }
   ' "${LIFECYCLE_FILE}"
 }
 
@@ -332,7 +342,7 @@ game_activity() {
         printf 'true\n'
         return
       fi
-    done <"${environment}" 2>/dev/null || true
+    done 2>/dev/null <"${environment}" || true
   done
 
   if ((readable > 0)); then
@@ -391,7 +401,7 @@ evaluate_lifecycle() {
 
 set_gamescope_limiter() {
   local limiter=$1
-  local target=0
+  local target=${FPS}
 
   [[ "${limiter}" == parked ]] && target=${PARKED_FPS}
   user_command env GAMESCOPE_WAYLAND_DISPLAY="${GAMESCOPE_DISPLAY}" \
@@ -415,7 +425,9 @@ lifecycle_supervisor() {
   local initial_offset=$2
   local lifecycle_state=active
   local last_reported_state=
-  local limiter=full
+  # Start unset so the first pass always pushes the limiter, otherwise a session
+  # that begins active never applies the cap at all.
+  local limiter=
   local limiter_healthy=true
   local next_retry=0
   local quiet_since=0
@@ -546,13 +558,22 @@ run_session() {
     sink_name=steam_stream_audio \
     sink_properties=device.description=Steam_Stream_Audio \
     rate=48000 \
-    channels=2 \
-    channel_map=front-left,front-right >/dev/null
+    channels=8 \
+    channel_map=front-left,front-right,rear-left,rear-right,front-center,lfe,side-left,side-right >/dev/null
   user_command pactl set-default-sink steam_stream_audio
 
   snapshot_content_log
   content_log_inode=${CONTENT_LOG_INODE}
   content_log_offset=${CONTENT_LOG_OFFSET}
+
+  # Xwayland derives the core screen millimeters from its DPI setting at
+  # startup and never updates them, so pass a DPI matching the advertised
+  # physical size or Steam scales its UI and streamed cursor for 96 DPI.
+  local phys_width_mm=${PHYS_MM%%x*}
+  local xwayland_dpi=$(((WIDTH * 254 + phys_width_mm * 5) / (phys_width_mm * 10)))
+  printf '#!/usr/bin/env bash\nexec /usr/bin/Xwayland "$@" -dpi %s\n' "${xwayland_dpi}" \
+    >"${CONTROL_DIR}/xwayland"
+  chmod 0755 "${CONTROL_DIR}/xwayland"
 
   start_user gamescope \
     env \
@@ -560,18 +581,26 @@ run_session() {
       XDG_SESSION_DESKTOP=gamescope \
       XDG_SESSION_TYPE=wayland \
       ENABLE_GAMESCOPE_WSI=1 \
+      XCURSOR_SIZE="${CURSOR_CANVAS}" \
+      STEAM_REMOTE_CURSOR_CANVAS="${CURSOR_CANVAS}" \
+      STEAM_REMOTE_CURSOR_GLYPH="${CURSOR_GLYPH}" \
+      FSR4_UPGRADE=1 \
+      GAMESCOPE_HEADLESS_PHYS_MM="${PHYS_MM}" \
+      GAMESCOPE_PIPEWIRE_NO_NV12="${ZERO_COPY}" \
+      WLR_XWAYLAND="${CONTROL_DIR}/xwayland" \
     gamescope \
       -e \
       --rt \
       --backend headless \
       --xwayland-count 2 \
+      --force-windows-fullscreen \
       -W "${WIDTH}" \
       -H "${HEIGHT}" \
       -w "${WIDTH}" \
       -h "${HEIGHT}" \
       -r "${FPS}" \
       -- \
-      /usr/bin/steam -gamepadui
+      /usr/bin/steam -pipewire -gamepadui
 
   wait_for_socket "${GAMESCOPE_SOCKET}"
   start_auxiliary lifecycle lifecycle_supervisor "${content_log_inode}" "${content_log_offset}"
@@ -606,7 +635,9 @@ report() {
   local now
   local healthy=true
 
-  is_running gamescope && gamescope=true
+  if is_running gamescope || is_running gamescope-wl; then
+    gamescope=true
+  fi
   [[ -S "${RUNTIME_DIR}/pipewire-0" ]] && pipewire=true
   [[ -S "${RUNTIME_DIR}/pulse/native" ]] && pulse=true
   if is_running steam || is_running steamwebhelper; then

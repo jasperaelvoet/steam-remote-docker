@@ -1,0 +1,152 @@
+# Maintainer: Maxime Gauduin <alucryd@archlinux.org>
+# Maintainer: Giancarlo Razzolini <grazzolini@archlinux.org>
+# Maintainer: Sven-Hendrik Haase <svenstaro@archlinux.org>
+
+pkgname=gamescope
+pkgver=3.16.26
+pkgrel=1.1
+pkgdesc='SteamOS session compositing window manager'
+arch=(x86_64)
+url=https://github.com/ValveSoftware/gamescope
+license=(
+  BSD-2-Clause
+  BSD-3-Clause
+  LicenseRef-Reshade
+)
+depends=(
+  glibc
+  libstdc++
+  libgcc
+  lcms2
+  libavif
+  libcap.so
+  libdecor
+  libdrm
+  libei
+  libinput
+  libpipewire-0.3.so
+  libx11
+  libxcb
+  libxcomposite
+  libxcursor
+  libxdamage
+  libxext
+  libxfixes
+  libxi
+  libxkbcommon.so
+  libxmu
+  libxrender
+  libxres
+  libxtst
+  libxxf86vm
+  luajit
+  pixman
+  sdl2
+  seatd
+  systemd-libs
+  vulkan-icd-loader
+  wayland
+  xcb-util-errors
+  xcb-util-wm
+  xorg-server-xwayland
+)
+makedepends=(
+  benchmark
+  catch2
+  cmake
+  git
+  glslang
+  meson
+  ninja
+  vulkan-headers
+  wayland-protocols
+)
+
+_gamescope_commit=565397f8cc0979104acd922e54783b451ddbb840
+_reshade_commit=696b14cd6006ae9ca174e6164450619ace043283
+_libdisplay_info_commit=47a5590e9c4eb35d67651b8c05a55f1a48259329
+_libliftoff_commit=8b08dc1c14fd019cc90ddabe34ad16596b0691f4
+_openvr_commit=ff87f683f41fe26cc9353dd9d9d7028357fd8e1a
+_spirv_headers_commit=d790ced752b5bfc06b6988baadef6eb2d16bdf96
+_vkroots_commit=5106d8a0df95de66cc58dc1ea37e69c99afc9540
+_wlroots_commit=d783533489e1f75d6886c2ab5c5960090ef268f8
+_glm_commit=0af55ccecd98d4e5a8d1fad7de25ba429d60e863
+_stb_commit=5736b15f7ea0ffb08dd38af21067c314d6a3aae9
+
+source=(
+  "gamescope-${_gamescope_commit}.tar.gz::https://github.com/ValveSoftware/gamescope/archive/${_gamescope_commit}.tar.gz"
+  "reshade-${_reshade_commit}.tar.gz::https://github.com/Joshua-Ashton/reshade/archive/${_reshade_commit}.tar.gz"
+  "libdisplay-info-${_libdisplay_info_commit}.tar.gz::https://gitlab.freedesktop.org/emersion/libdisplay-info/-/archive/${_libdisplay_info_commit}/libdisplay-info-${_libdisplay_info_commit}.tar.gz"
+  "libliftoff-${_libliftoff_commit}.tar.gz::https://gitlab.freedesktop.org/emersion/libliftoff/-/archive/${_libliftoff_commit}/libliftoff-${_libliftoff_commit}.tar.gz"
+  "openvr-${_openvr_commit}.tar.gz::https://github.com/ValveSoftware/openvr/archive/${_openvr_commit}.tar.gz"
+  "SPIRV-Headers-${_spirv_headers_commit}.tar.gz::https://github.com/KhronosGroup/SPIRV-Headers/archive/${_spirv_headers_commit}.tar.gz"
+  "vkroots-${_vkroots_commit}.tar.gz::https://github.com/Joshua-Ashton/vkroots/archive/${_vkroots_commit}.tar.gz"
+  "wlroots-${_wlroots_commit}.tar.gz::https://gitlab.freedesktop.org/wlroots/wlroots/-/archive/${_wlroots_commit}/wlroots-${_wlroots_commit}.tar.gz"
+  "glm-${_glm_commit}.tar.gz::https://github.com/g-truc/glm/archive/${_glm_commit}.tar.gz"
+  "stb-${_stb_commit}.tar.gz::https://github.com/nothings/stb/archive/${_stb_commit}.tar.gz"
+  pipewire-steam-capture.patch
+  headless-output-phys-size.patch
+)
+sha256sums=(
+  bea35462e4c096d0ee4c83dc0e80f301d73fc6ef60ea7bed0400c0699de66e89
+  3aa6feda7773cc8ffa8fb012fe95e6207c776101e29198d0e0d34a0c5e339f6a
+  e7c446673180b3f8f19890e2d5223fa1058d706368a2c5c69c0e6443f811b3e3
+  8de28aee6f90f47b7fc7037dcd2360166197c0b5d2033f3afdbd34f2ea1bf216
+  22ea84da76f0f37f15d3433aef5f202ad6f8df12c280da7caa47e0475eeb22fd
+  90141b3f6261dba643fe546d56b4539e61fe40e307c5c3b9985ea9fa0622ac3f
+  37b77586e91f7ebee70380dcddd73bf01ae4acef1053e6be41d0485ede022422
+  d4d7c5f4ff5729d5eff33859b58ab7ced812aca54367b75ecbdaf9aae448fff6
+  e7f187d83523f505eb38dd25d297ea6c0d4ed856d733e808f18253f5a8fa88a0
+  d00921d49b06af62aa6bfb97c1b136bec661dd11dd4eecbcb0da1f6da7cedb4c
+  86dec599179d941335fe7bede3d27b040e4e307bcbbf29e0f25383d0f95a6f73
+  7e209c6d5adaa75a37bcc30ae0f82aa57c38bb63e0527db9351d93c12884ab31
+)
+
+prepare() {
+  local source_dir="${srcdir}/gamescope-${_gamescope_commit}"
+
+  cd "${source_dir}"
+  patch -Np1 -i "${srcdir}/pipewire-steam-capture.patch"
+  patch -Np1 -i "${srcdir}/headless-output-phys-size.patch"
+
+  rm -rf \
+    src/reshade \
+    subprojects/libdisplay-info \
+    subprojects/libliftoff \
+    subprojects/openvr \
+    subprojects/vkroots \
+    subprojects/wlroots \
+    subprojects/glm \
+    subprojects/stb \
+    thirdparty/SPIRV-Headers
+
+  mv "${srcdir}/reshade-${_reshade_commit}" src/reshade
+  mv "${srcdir}/libdisplay-info-${_libdisplay_info_commit}" subprojects/libdisplay-info
+  mv "${srcdir}/libliftoff-${_libliftoff_commit}" subprojects/libliftoff
+  mv "${srcdir}/openvr-${_openvr_commit}" subprojects/openvr
+  mv "${srcdir}/vkroots-${_vkroots_commit}" subprojects/vkroots
+  mv "${srcdir}/wlroots-${_wlroots_commit}" subprojects/wlroots
+  mv "${srcdir}/glm-${_glm_commit}" subprojects/glm
+  mv "${srcdir}/stb-${_stb_commit}" subprojects/stb
+  mv "${srcdir}/SPIRV-Headers-${_spirv_headers_commit}" thirdparty/SPIRV-Headers
+
+  cp -a subprojects/packagefiles/glm/. subprojects/glm/
+  cp -a subprojects/packagefiles/stb/. subprojects/stb/
+}
+
+build() {
+  arch-meson "gamescope-${_gamescope_commit}" build \
+    -Dforce_fallback_for=glm,stb,libdisplay-info,libliftoff,vkroots \
+    -Dpipewire=enabled
+  meson compile -C build
+}
+
+check() {
+  meson test -C build --print-errorlogs
+}
+
+package() {
+  DESTDIR="${pkgdir}" meson install -C build --skip-subprojects
+  install -Dm 644 "gamescope-${_gamescope_commit}/LICENSE" \
+    -t "${pkgdir}/usr/share/licenses/gamescope/"
+}
