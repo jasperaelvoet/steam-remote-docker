@@ -591,9 +591,14 @@ mount_scratch() {
   local target=$1
   local options=$2
 
-  # Already mounted by an earlier in-place session restart.
-  if [[ "$(findmnt -no SOURCE "${target}" 2>/dev/null)" == scratch ]]; then
-    return 0
+  # Engines premount some of these as tmpfs (Podman: /run, plus /tmp and
+  # /var/tmp when read-only), and earlier in-place session restarts leave our
+  # own mounts behind. Remount those in place — a fresh mount would shadow
+  # submounts such as a /run/udev bind. Mode is settable only at mount time.
+  if [[ "$(findmnt -no FSTYPE "${target}" 2>/dev/null)" == tmpfs ]]; then
+    if mount -o "remount,${options%,mode=*}" "${target}"; then
+      return 0
+    fi
   fi
   if ! mount -t tmpfs -o "${options}" scratch "${target}"; then
     printf 'steam-remote: unable to mount tmpfs on %s; the container must run privileged\n' \
