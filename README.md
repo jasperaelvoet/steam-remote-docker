@@ -65,8 +65,8 @@ Gamescope stays at full rate while a Remote Play stream, a Steam game, or an
 active download, update, validation, or patch operation is running. A
 disconnected game continues running so the same session can reconnect. With no
 activity, the image waits five minutes, parks Gamescope at 1 FPS, and then
-hibernates: Gamescope, the X servers, and Steam's UI helper are suspended with
-SIGSTOP so CPU and GPU go fully idle. The main Steam process keeps running, so
+hibernates: Gamescope and Steam's UI helper are suspended with SIGSTOP so CPU
+and GPU go fully idle. The main Steam process and Xwayland keep running, so
 the host stays discoverable; a new connection or any other activity resumes
 everything and restores the configured rate within a second. Paused or queued
 updates do not keep the session active. If activity detection or Gamescope

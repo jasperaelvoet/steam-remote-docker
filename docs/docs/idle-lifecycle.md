@@ -50,15 +50,18 @@ full rate automatically, typically within a second.
 
 Parking goes further than a 1 FPS limiter: once the parked limiter is
 confirmed, the session **hibernates**. Everything not needed to accept a new
-Remote Play session — Gamescope, the X servers, and Steam's UI helper — is
-frozen in place with `SIGSTOP`. Frozen processes use zero CPU and GPU but
-keep all their state in RAM, so there is nothing to reload on wake.
+Remote Play session — Gamescope and Steam's UI helper — is frozen in place
+with `SIGSTOP`. Frozen processes use zero CPU and GPU but keep all their
+state in RAM, so there is nothing to reload on wake.
 
-The main Steam process stays running, so the host remains discoverable and
-keeps accepting connections. When a client connects (or any other activity
-appears), the controller thaws everything with `SIGCONT` *before* restoring
-the full frame rate — wake is effectively instant. Detection uncertainty
-also thaws the session: when in doubt, everything runs.
+The main Steam process and Xwayland stay running, so the host remains
+discoverable and keeps accepting connections — Steam is an X11 client, and
+freezing its X server would stall the thread that answers discovery probes.
+With the UI helper frozen nothing draws, so the running Xwayland costs
+effectively nothing. When a client connects (or any other activity appears),
+the controller thaws everything with `SIGCONT` *before* restoring the full
+frame rate — wake is effectively instant. Detection uncertainty also thaws
+the session: when in doubt, everything runs.
 
 ## Failing safe
 

@@ -104,11 +104,12 @@ the [idle lifecycle](../idle-lifecycle.md). Each tick it:
    `/run/steam-remote/lifecycle`, which is what `status` and `health` read. A
    heartbeat older than 10 seconds marks the controller unhealthy.
 7. **Hibernates the parked session** — once the parked limiter is confirmed,
-   it freezes Gamescope, the Xwaylands, and the Steam web helper with
-   `SIGSTOP`; the main Steam process keeps running so the host stays
-   discoverable and the kernel still completes incoming connections. Any
-   wake signal — or any detector uncertainty — thaws everything with
-   `SIGCONT` before the limiter is raised.
+   it freezes Gamescope and the Steam web helper with `SIGSTOP`; the main
+   Steam process and Xwayland keep running so the host stays discoverable
+   (steam is an X11 client — a frozen X server stalls its discovery
+   responder) and the kernel still completes incoming connections. Any wake
+   signal — or any detector uncertainty — thaws everything with `SIGCONT`
+   before the limiter is raised.
 8. **Schedules update restarts** — once the session has been parked for an
    hour and at least 24 hours have passed since the last restart (stamp in
    the data folder), it drops a restart marker and terminates the session's

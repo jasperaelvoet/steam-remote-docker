@@ -46,7 +46,11 @@ readonly SESSION_RESTART_STATUS=75
 # process stays running for discovery and connection accept; the kernel
 # completes a client's TCP handshake on its own, the supervisor notices the
 # established connection within a second and resumes everything first.
-readonly -a DEEP_PARK_NAMES=(gamescope gamescope-wl Xwayland steamwebhelper)
+# Xwayland must NOT be suspended: steam is an X11 client, and a frozen X
+# server stalls the very thread that answers discovery probes, making the
+# host invisible to clients. With the web helper suspended nothing draws, so
+# a running Xwayland costs nothing and keeps steam responsive.
+readonly -a DEEP_PARK_NAMES=(gamescope gamescope-wl steamwebhelper)
 
 declare -a children=()
 declare -a auxiliaries=()
