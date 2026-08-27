@@ -1,0 +1,7 @@
+# Docusaurus
+/build
+/.docusaurus
+/node_modules
+
+# Misc
+.DS_Store

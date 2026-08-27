@@ -1,0 +1,26 @@
+/**
+ * steam-remote-docker docs theme — Steam-blue accent.
+ */
+
+:root {
+  --ifm-color-primary: #1a6fa8;
+  --ifm-color-primary-dark: #176497;
+  --ifm-color-primary-darker: #165e8f;
+  --ifm-color-primary-darkest: #124e76;
+  --ifm-color-primary-light: #1d7ab9;
+  --ifm-color-primary-lighter: #1e80c1;
+  --ifm-color-primary-lightest: #2492da;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] {
+  --ifm-color-primary: #66c0f4;
+  --ifm-color-primary-dark: #47b3f2;
+  --ifm-color-primary-darker: #37adf1;
+  --ifm-color-primary-darkest: #0f97e4;
+  --ifm-color-primary-light: #85cdf6;
+  --ifm-color-primary-lighter: #95d3f7;
+  --ifm-color-primary-lightest: #c3e6fb;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}

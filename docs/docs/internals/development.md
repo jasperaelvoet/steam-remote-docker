@@ -4,7 +4,7 @@ Development tooling runs through [Bun](https://bun.sh) (1.4 or newer). The
 TypeScript scripts in `scripts/` are the whole toolchain — there is no other
 build system.
 
-```sh
+```bash
 bun install --frozen-lockfile
 bun run check
 bun run build
@@ -22,7 +22,8 @@ scripts/
   check.ts                     # syntax, lint, and repository-shape checks
   build.ts                     # container image build wrapper
   lifecycle.test.ts            # unit tests for the lifecycle logic
-.github/workflows/container.yml  # validate + publish CI
+docs/                          # this documentation site (Docusaurus)
+.github/workflows/             # validate + publish CI, docs deploy
 ```
 
 ## `bun run check`
@@ -32,8 +33,7 @@ Runs the full validation suite:
 - `tsc --noEmit` over `scripts/`
 - Repository-shape checks: required files exist and are non-empty, removed
   legacy paths stay removed, and a scan that keeps out-of-scope concepts
-  (alternate streaming stacks, host deployment managers, …) from creeping back
-  into the core files
+  from creeping back into the core files
 - `bash -n` and ShellCheck on `container/steam-remote.sh` (ShellCheck is
   skipped with a warning if not installed) and `bash -n` on the PKGBUILD
 - The lifecycle unit tests (`scripts/lifecycle.test.ts`), which exercise the
@@ -60,22 +60,22 @@ The project maintains a small set of hard rules (see
   contents.
 - System packages belong in `Containerfile`; everything Steam writes belongs
   in the persistent home.
-- Defaults are `3840x2160@60`, and the three documented display variables are
-  the entire supported configuration surface.
+- Defaults are `3840x2160@60`, and the three documented display variables
+  are the entire supported configuration surface.
 - Host networking, the read-only root, and AMD RADV/VA-API support are
   preserved.
 
 ## Validating runtime changes
 
-Source checks run anywhere, but runtime validation requires Linux with an AMD
-GPU. Before shipping image or runtime changes, confirm:
+Source checks run anywhere, but runtime validation requires Linux with an
+AMD GPU. Before shipping image or runtime changes, confirm:
 
 - Vulkan and VA-API reach the GPU inside the container
 - PipeWire-Pulse is reachable and Gamescope publishes a capture node
 - Steam listens on TCP/UDP `27036`
 - A real Steam Link session gets hardware-encoded video, audio, and
-  controller input, reconnects cleanly, and keeps its library and login after
-  the image is replaced
+  controller input, reconnects cleanly, and keeps its library and login
+  after the image is replaced
 
 ## CI
 
@@ -86,13 +86,15 @@ publishes the `linux/amd64` image to
 
 ## Documentation
 
-This site is built with [VitePress](https://vitepress.dev) from `docs/`:
+This site is a standalone [Docusaurus](https://docusaurus.io) workspace in
+`docs/` with its own `package.json`:
 
-```sh
-bun run docs:dev     # local dev server with hot reload
-bun run docs:build   # production build (also validates links)
-bun run docs:preview # serve the production build
+```bash
+cd docs
+bun install
+bun run start   # local dev server with hot reload
+bun run build   # production build (validates internal links)
 ```
 
-It deploys to GitHub Pages automatically on pushes to `main` that touch
-`docs/`.
+It deploys to GitHub Pages automatically on every push to `main` that
+touches `docs/`.
