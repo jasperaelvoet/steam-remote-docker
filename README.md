@@ -7,6 +7,9 @@ and AMD hardware acceleration.
 There are no alternate session modes, recovery services, or per-game
 workarounds. Steam owns discovery, pairing, streaming, audio, and input.
 
+Full documentation lives at
+[jasperaelvoet.github.io/steam-remote-docker](https://jasperaelvoet.github.io/steam-remote-docker/).
+
 ## Run
 
 The host needs Linux, Podman, an AMD GPU, and `/dev/uinput` plus `/dev/uhid`.
